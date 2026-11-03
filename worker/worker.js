@@ -14,18 +14,20 @@
 //   KV namespace binding:  NOW_AND_THEN
 //   Secrets:               TOKEN_<NAME>, one per person (any long random string)
 
-// Returns the board's KV key for this token, or null if no TOKEN_* secret matches.
+// Finds whose token this is. Returns { name } for a match, { clash: [names] } when
+// two TOKEN_* secrets hold the same value (that would silently put two people on
+// one board, so it is refused), or null if no TOKEN_* secret matches.
 // Both sides are trimmed, because a pasted secret often carries a trailing newline.
-function boardKeyFor(token, env) {
+function ownerOf(token, env) {
   token = (token || "").trim();
   if (!token) return null;
+  const names = [];
   for (const [name, raw] of Object.entries(env)) {
     const value = typeof raw === "string" ? raw.trim() : "";
-    if (name.startsWith("TOKEN_") && value.length >= 16 && value === token) {
-      return "board:" + name.slice(6).toLowerCase();
-    }
+    if (name.startsWith("TOKEN_") && value.length >= 16 && value === token) names.push(name.slice(6).toLowerCase());
   }
-  return null;
+  if (names.length > 1) return { clash: names.sort() };
+  return names.length ? { name: names[0] } : null;
 }
 const TOMBSTONE_DAYS = 60;
 
@@ -33,14 +35,15 @@ function cors(extra = {}) {
   return {
     "Access-Control-Allow-Origin": "*", // security rests on the token
     "Access-Control-Allow-Methods": "GET, PUT, OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Expect-Board",
+    "Access-Control-Expose-Headers": "X-Board",
     "Access-Control-Max-Age": "86400",
     ...extra,
   };
 }
 
-function json(obj, status = 200) {
-  return new Response(JSON.stringify(obj), { status, headers: cors({ "Content-Type": "application/json" }) });
+function json(obj, status = 200, extra = {}) {
+  return new Response(JSON.stringify(obj), { status, headers: cors({ "Content-Type": "application/json", ...extra }) });
 }
 
 // Keep in sync with mergeBoards() in app/app.js.
@@ -71,22 +74,33 @@ export default {
     const url = new URL(request.url);
     if (url.pathname.endsWith("/data")) {
       const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
-      const KEY = boardKeyFor(token, env);
-      if (!KEY) return json({ error: "unauthorized" }, 401);
+      const owner = ownerOf(token, env);
+      if (!owner) return json({ error: "unauthorized" }, 401);
+      if (owner.clash) return json({ error: "token clash", boards: owner.clash }, 409);
+      const KEY = "board:" + owner.name;
+      const who = { "X-Board": owner.name };
+
+      // A device says which board it last synced with. If this token now opens a
+      // different board (for example after the secrets were changed), refuse rather
+      // than merge one person's lists into another's.
+      const expect = (request.headers.get("X-Expect-Board") || "").trim().toLowerCase();
+      if (request.method === "PUT" && expect && expect !== owner.name) {
+        return json({ error: "board changed", board: owner.name, expected: expect }, 409, who);
+      }
 
       const stored = await env.NOW_AND_THEN.get(KEY, "json");
 
-      if (request.method === "GET") return json(stored || { version: 1, settings: {}, lists: [], todos: [] });
+      if (request.method === "GET") return json(stored || { version: 1, settings: {}, lists: [], todos: [] }, 200, who);
 
       if (request.method === "PUT") {
         const body = await request.text();
-        if (body.length > 4_000_000) return json({ error: "too large" }, 413);
+        if (body.length > 4_000_000) return json({ error: "too large" }, 413, who);
         let incoming;
-        try { incoming = JSON.parse(body); } catch (e) { return json({ error: "bad json" }, 400); }
-        if (!incoming || !Array.isArray(incoming.lists) || !Array.isArray(incoming.todos)) return json({ error: "not a board" }, 400);
+        try { incoming = JSON.parse(body); } catch (e) { return json({ error: "bad json" }, 400, who); }
+        if (!incoming || !Array.isArray(incoming.lists) || !Array.isArray(incoming.todos)) return json({ error: "not a board" }, 400, who);
         const merged = stored ? mergeBoards(stored, incoming) : mergeBoards({}, incoming);
         await env.NOW_AND_THEN.put(KEY, JSON.stringify(merged));
-        return json(merged);
+        return json(merged, 200, who);
       }
 
       return json({ error: "method not allowed" }, 405);

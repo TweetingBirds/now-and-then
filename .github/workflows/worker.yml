@@ -16,10 +16,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: worker
-          # One access token per person. Add more TOKEN_<NAME> lines (and repo secrets) for more people.
-          secrets: |
-            TOKEN_NATE
-            TOKEN_TIFFANY
-        env:
-          TOKEN_NATE: ${{ secrets.TOKEN_NATE }}
-          TOKEN_TIFFANY: ${{ secrets.TOKEN_TIFFANY }}
+          # Access tokens (TOKEN_NATE, TOKEN_TIFFANY, ...) are Worker secrets set with
+          # `wrangler secret put` or the Cloudflare dashboard. They are deliberately not
+          # pushed from here: a deploy keeps the Worker's existing secrets, so a deploy
+          # can never swap or reset someone's token.
