@@ -15,10 +15,13 @@
 //   Secrets:               TOKEN_<NAME>, one per person (any long random string)
 
 // Returns the board's KV key for this token, or null if no TOKEN_* secret matches.
+// Both sides are trimmed, because a pasted secret often carries a trailing newline.
 function boardKeyFor(token, env) {
+  token = (token || "").trim();
   if (!token) return null;
-  for (const [name, value] of Object.entries(env)) {
-    if (name.startsWith("TOKEN_") && typeof value === "string" && value.length >= 16 && value === token) {
+  for (const [name, raw] of Object.entries(env)) {
+    const value = typeof raw === "string" ? raw.trim() : "";
+    if (name.startsWith("TOKEN_") && value.length >= 16 && value === token) {
       return "board:" + name.slice(6).toLowerCase();
     }
   }
