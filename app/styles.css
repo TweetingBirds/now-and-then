@@ -242,3 +242,6 @@ dialog.settings::backdrop { background: rgb(10 15 25 / .45); }
 .settings .row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .settings .msg { font-size: .85rem; min-height: 1.2em; color: var(--muted); }
 .settings .msg.bad { color: var(--margin); }
+.settings .version { font-variant-numeric: tabular-nums; }
+.settings .row.update { align-items: center; }
+.settings .row.update .msg:empty { display: none; }

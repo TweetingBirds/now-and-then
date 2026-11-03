@@ -15,9 +15,9 @@ It's a progressive web app: open it in Safari or Chrome and choose **Add to Home
 | Path | What it is |
 | --- | --- |
 | `app/` | The web app: plain HTML, CSS and JavaScript, no build step. Deployed to GitHub Pages. |
-| `app/sw.js` | Service worker for offline use. Bump `VERSION` when app files change. |
+| `app/sw.js` | Service worker for offline use. Its cache name is stamped with the build on each deploy. |
 | `worker/` | Cloudflare Worker that stores each person's board in Workers KV. |
-| `.github/workflows/pages.yml` | Deploys `app/` to GitHub Pages on every push to `main`. |
+| `.github/workflows/pages.yml` | Deploys `app/` to GitHub Pages on every push to `main`, stamping the build number, commit and date into the app and writing `version.json`. |
 | `.github/workflows/worker.yml` | Deploys the Worker to Cloudflare on pushes that change `worker/`. |
 
 Data lives in the browser's local storage first. When sync is set up, the app sends its whole board to the Worker after each change and whenever it's reopened. The Worker merges it with the stored board (the newest edit wins for each list, each todo and the settings) and sends the result back, so a phone and an iPad can both be used without overwriting each other.
