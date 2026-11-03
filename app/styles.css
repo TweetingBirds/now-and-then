@@ -55,6 +55,7 @@ header.top {
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 700; }
 .btn[disabled] { opacity: .45; cursor: not-allowed; }
 .toggle { display: inline-flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--muted); }
+.settings .toggle:has(input[type="radio"]) { display: flex; margin: 0; }
 .note {
   font-size: .82rem; color: var(--muted);
   padding-left: max(16px, env(safe-area-inset-left, 0px));
