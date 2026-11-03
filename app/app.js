@@ -6,7 +6,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.2.0";
+  const APP_VERSION = "1.3.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -163,7 +163,7 @@
   function schedulePush() {
     if (!syncConfigured()) return;
     clearTimeout(pushTimer);
-    pushTimer = setTimeout(sync, 1200);
+    pushTimer = setTimeout(() => { pushTimer = null; sync(); }, 1200);
   }
 
   // Send our board; the Worker merges it with what it has and returns the result.
@@ -195,7 +195,7 @@
       local.switching = false; local.otherBoard = "";
       // Edits made while the request was in flight are newer, so they survive the merge.
       board = mergeBoards(board, merged);
-      local.synced = true; write(LOCAL_KEY, local);
+      local.synced = true; lastPull = Date.now(); write(LOCAL_KEY, local);
       repairOrphans();
       write(BOARD_KEY, board);
       if (!isBusyEditing()) render();
@@ -222,6 +222,64 @@
     }
     if (info.error === "token clash") return `The Worker gives the same token to ${(info.boards || []).join(" and ")}. Nothing was synced. Give each person their own token.`;
     return "The Worker answered 409.";
+  }
+  // Fetch the saved board without sending ours, so a device that's just sitting open
+  // picks up changes made elsewhere. This is a read, which is cheap: the Worker only
+  // writes to KV on PUT, and KV's free tier allows far fewer writes than reads.
+  // It stands aside whenever a push is due or running (that push returns the merged
+  // board anyway) and while the person is typing or dragging, so it never
+  // re-renders under their hands. The next poll catches up.
+  let lastPull = 0;
+  async function pull() {
+    if (!syncConfigured() || !local.synced || local.otherBoard) return;
+    if (syncing || pushTimer || !navigator.onLine || busyForPull()) return;
+    syncing = true; lastPull = Date.now();
+    try {
+      const res = await fetch(dataUrl(), { headers: { "Authorization": "Bearer " + local.syncToken }, cache: "no-store" });
+      if (res.status === 401) throw new Error("The access token was not accepted.");
+      if (res.status === 409) throw new Error(await clashMessage(res));
+      if (!res.ok) throw new Error("The Worker answered " + res.status + ".");
+      // Same board-identity guard as a push: never merge another person's board in.
+      const who = res.headers.get("X-Board");
+      if (local.board && who && who !== local.board) {
+        local.otherBoard = who; write(LOCAL_KEY, local);
+        throw new Error(`This token now opens ${boardLabel(who)}, not ${boardLabel(local.board)}. Nothing was synced. ` +
+          `If that's a mistake, fix the token in the Worker. If it's what you want, tap Save and sync to switch this device to ${boardLabel(who)}.`);
+      }
+      const remote = await res.json();
+      // Someone may have started typing or dragging while the request was out.
+      if (pushTimer || busyForPull()) return;
+      const before = JSON.stringify(board);
+      board = mergeBoards(board, remote);
+      repairOrphans();
+      const after = JSON.stringify(board);
+      if (after !== before) { write(BOARD_KEY, board); render(); }
+      // This device had edits the saved board lacks (say a push failed): send them.
+      if (hasNewer(board, remote)) schedulePush();
+      idleStatus();
+    } catch (e) {
+      setStatus("error", "Sync problem");
+      document.getElementById("syncStatus").title = e.message || String(e);
+    } finally {
+      syncing = false;
+      if (again) { again = false; schedulePush(); }
+    }
+  }
+  // True when a has a list, todo or settings edit that b doesn't.
+  function hasNewer(a, b) {
+    const newer = (x = [], y = []) => {
+      const seen = new Map(y.map(i => [i.id, i.updatedAt || 0]));
+      return x.some(i => !seen.has(i.id) ? !i.deleted : (i.updatedAt || 0) > seen.get(i.id));
+    };
+    return newer(a.lists, b.lists) || newer(a.todos, b.todos) ||
+      ((a.settings && a.settings.updatedAt) || 0) > ((b.settings && b.settings.updatedAt) || 0);
+  }
+  // An empty, focused add box isn't an edit in progress (render() puts focus back),
+  // and on a desktop it can stay focused for hours, so it doesn't hold off a pull.
+  function busyForPull() {
+    const a = document.activeElement;
+    if (!drag && a && a.id && a.id.startsWith("add-") && !a.value) return false;
+    return isBusyEditing();
   }
   function isBusyEditing() {
     const a = document.activeElement;
@@ -656,6 +714,15 @@
     if (document.visibilityState === "visible") { checkDay(); sync(); }
   });
   window.addEventListener("online", () => { idleStatus(); sync(); });
+  // A browser window on a Mac stays "visible" behind other windows, so coming back
+  // to it only fires focus. Pull then, at most every few seconds.
+  window.addEventListener("focus", () => { if (Date.now() - lastPull > 3000) pull(); });
+  // While the app is on screen, check for changes from other devices every 20 seconds.
+  // Hidden tabs don't poll; they catch up with a full sync when shown again.
+  const POLL_MS = 20 * 1000;
+  setInterval(() => {
+    if (document.visibilityState === "visible" && Date.now() - lastPull >= POLL_MS - 1000) pull();
+  }, POLL_MS);
   window.addEventListener("offline", idleStatus);
   setInterval(() => { if (local.lastDay !== todayKey()) checkDay(); }, 60 * 1000);
 

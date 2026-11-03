@@ -20,7 +20,7 @@ It's a progressive web app: open it in Safari or Chrome and choose **Add to Home
 | `.github/workflows/pages.yml` | Deploys `app/` to GitHub Pages on every push to `main`, stamping the build number, commit and date into the app and writing `version.json`. |
 | `.github/workflows/worker.yml` | Deploys the Worker to Cloudflare on pushes that change `worker/`. |
 
-Data lives in the browser's local storage first. When sync is set up, the app sends its whole board to the Worker after each change and whenever it's reopened. The Worker merges it with the stored board (the newest edit wins for each list, each todo and the settings) and sends the result back, so a phone and an iPad can both be used without overwriting each other.
+Data lives in the browser's local storage first. When sync is set up, the app sends its whole board to the Worker after each change and whenever it's reopened. The Worker merges it with the stored board (the newest edit wins for each list, each todo and the settings) and sends the result back, so a phone and an iPad can both be used without overwriting each other. While the app is on screen it also checks for changes from other devices every 20 seconds, and right away when its tab or window comes back into focus, so a board left open on a computer keeps up with edits made on a phone. These checks only read the board (no KV writes), pause while the tab is hidden, and wait while you're typing or dragging.
 
 Each person has their own board and their own access token. The Worker looks for secrets named `TOKEN_<NAME>` and stores that person's board under the KV key `board:<name>`. To share one board, two people use the same token (one `TOKEN_<NAME>` secret, for example `TOKEN_FAMILY`). Two secrets must never hold the same value.
 
