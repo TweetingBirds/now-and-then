@@ -1,0 +1,8 @@
+name = "now-and-then-sync"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+# KV namespace "now-and-then" in Nate's Cloudflare account.
+[[kv_namespaces]]
+binding = "NOW_AND_THEN"
+id = "a8d1b6c4b4d243c2a05227906287293a"
