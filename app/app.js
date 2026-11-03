@@ -6,14 +6,14 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.0.0";
+  const APP_VERSION = "1.1.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
   const STAMPED = !BUILD_NUMBER.startsWith("__");
 
   const BOARD_KEY = "nat.board.v1";
-  const LOCAL_KEY = "nat.local.v1"; // per-device: lastDay, dayOffset, sync settings
+  const LOCAL_KEY = "nat.local.v1"; // per-device: lastDay, sync settings
   const MAX_LISTS = 10;
   const TOMBSTONE_DAYS = 60;
   const PALETTE = ["#f2b84b", "#7b9cff", "#9b8cf0", "#5cc6a7", "#f28b82", "#f6a6cf", "#8ecae6", "#b5d16b", "#c9a27e", "#ff9f5a", "#7fd1d8", "#a3a9b5"];
@@ -24,7 +24,7 @@
   const read = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
   const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
 
-  let local = Object.assign({ lastDay: null, dayOffset: 0, syncUrl: "", syncToken: "", pristine: false, synced: false }, read(LOCAL_KEY) || {});
+  let local = Object.assign({ lastDay: null, syncUrl: "", syncToken: "", pristine: false, synced: false }, read(LOCAL_KEY) || {});
   let board = read(BOARD_KEY);
   if (!board) { board = starterBoard(); local.pristine = true; write(LOCAL_KEY, local); }
 
@@ -34,7 +34,7 @@
     const todo = (text, listId, order) => ({ id: uid(), text, listId, order, done: false, doneDay: null, archived: false, updatedAt: t });
     return {
       version: 1,
-      settings: { carry: true, updatedAt: t },
+      settings: { carry: true, doneNow: false, updatedAt: t },
       lists: [
         { id: ids.now, name: "Now", color: "#f2b84b", role: "now", order: 1, updatedAt: t },
         { id: ids.tom, name: "Tomorrow", color: "#7b9cff", role: "tomorrow", order: 2, updatedAt: t },
@@ -84,27 +84,38 @@
   }
 
   // ---------- dates ----------
-  function dayDate(offset = local.dayOffset) { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + offset); return d; }
+  function dayDate() { const d = new Date(); d.setHours(12, 0, 0, 0); return d; }
   const keyOf = d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   const todayKey = () => keyOf(dayDate());
   function pretty(key, opts = { weekday: "long", month: "long", day: "numeric" }) {
     const [y, m, d] = key.split("-").map(Number); return new Date(y, m - 1, d, 12).toLocaleDateString(undefined, opts);
   }
 
+  function archive(t) {
+    const l = listById(t.listId);
+    touch(t, { archived: true, archivedDay: t.doneDay || todayKey(), fromName: l ? l.name : "", fromColor: l ? l.color : "#a3a9b5" });
+  }
+
+  // Checked todos move to Done: right away when the "doneNow" setting is on,
+  // otherwise the morning after they were checked.
+  function sweepDone() {
+    const today = todayKey();
+    let moved = 0;
+    for (const t of board.todos) {
+      if (!t.deleted && !t.archived && t.done && (board.settings.doneNow || (t.doneDay && t.doneDay < today))) { archive(t); moved++; }
+    }
+    return moved;
+  }
+
   // The morning ritual: yesterday's checked todos go to Done, and (optionally)
   // unfinished Tomorrow todos move into Now.
   function rollover() {
     const today = todayKey();
-    if (!local.lastDay) { local.lastDay = today; write(LOCAL_KEY, local); return 0; }
-    if (local.lastDay >= today) return 0;
-    let moved = 0;
-    for (const t of board.todos) {
-      if (!t.deleted && !t.archived && t.done && t.doneDay && t.doneDay < today) {
-        const l = listById(t.listId);
-        touch(t, { archived: true, archivedDay: t.doneDay, fromName: l ? l.name : "", fromColor: l ? l.color : "#a3a9b5" });
-        moved++;
-      }
-    }
+    // Builds before this one had a "Start next day" test button that could push
+    // lastDay into the future; pull it back so mornings roll over again.
+    if (!local.lastDay || local.lastDay > today) { local.lastDay = today; write(LOCAL_KEY, local); return sweepDone(); }
+    if (local.lastDay === today) return sweepDone();
+    const moved = sweepDone();
     if (board.settings.carry) {
       const nowL = lists().find(l => l.role === "now"), tomL = lists().find(l => l.role === "tomorrow");
       if (nowL && tomL) {
@@ -265,7 +276,9 @@
     row.append(
       el("button", { class: "grip", "aria-label": "Drag to move", title: "Drag to move", onpointerdown: e => startDrag(e, t, row) }, "⋮⋮"),
       el("input", { type: "checkbox", class: "check", checked: t.done, "aria-label": "Done", onchange: e => {
-        touch(t, { done: e.target.checked, doneDay: e.target.checked ? todayKey() : null }); commit();
+        touch(t, { done: e.target.checked, doneDay: e.target.checked ? todayKey() : null });
+        if (t.done && board.settings.doneNow) { archive(t); commit(); toast("Nice. Moved to Done."); return; }
+        commit();
         if (t.done) toast("Nice. It moves to Done tomorrow morning.");
       } }),
       text,
@@ -564,6 +577,7 @@
   const dlg = document.getElementById("settings");
   document.getElementById("openSettings").addEventListener("click", () => {
     document.getElementById("carry").checked = !!board.settings.carry;
+    document.getElementById(board.settings.doneNow ? "doneNow" : "doneLater").checked = true;
     document.getElementById("syncUrl").value = local.syncUrl;
     document.getElementById("syncToken").value = local.syncToken;
     document.getElementById("syncMsg").textContent = "";
@@ -575,8 +589,13 @@
     if (syncConfigured()) sync(); else document.getElementById("openSettings").click();
   });
   document.getElementById("carry").addEventListener("change", e => {
-    board.settings = { carry: e.target.checked, updatedAt: now() }; commit();
+    board.settings = Object.assign({}, board.settings, { carry: e.target.checked, updatedAt: now() }); commit();
   });
+  document.querySelectorAll('input[name="doneWhen"]').forEach(r => r.addEventListener("change", () => {
+    board.settings = Object.assign({}, board.settings, { doneNow: document.getElementById("doneNow").checked, updatedAt: now() });
+    const moved = sweepDone(); commit();
+    if (moved) toast(`${moved} finished todo${moved === 1 ? "" : "s"} moved to Done.`);
+  }));
   document.getElementById("saveSync").addEventListener("click", async () => {
     const msg = document.getElementById("syncMsg");
     const url = document.getElementById("syncUrl").value.trim();
@@ -590,11 +609,6 @@
     const result = await sync();
     if (result === true) { msg.textContent = "Connected. Your lists are synced."; setTimeout(() => dlg.close(), 900); }
     else { msg.className = "msg bad"; msg.textContent = "Couldn't sync: " + result; }
-  });
-  document.getElementById("nextDay").addEventListener("click", () => {
-    local.dayOffset++; write(LOCAL_KEY, local);
-    const moved = rollover(); commit(); dlg.close();
-    toast(`Good morning! ${moved} finished todo${moved === 1 ? "" : "s"} moved to Done.`);
   });
 
   // ---------- day changes & lifecycle ----------

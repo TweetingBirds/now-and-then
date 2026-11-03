@@ -40,6 +40,10 @@
       <h3>Every morning</h3>
       <label class="toggle"><input type="checkbox" id="carry"> Move unfinished Tomorrow todos into Now</label>
 
+      <h3>Finished todos</h3>
+      <label class="toggle"><input type="radio" name="doneWhen" id="doneLater" value="later"> Keep in their list until the next day, then move to Done</label>
+      <label class="toggle"><input type="radio" name="doneWhen" id="doneNow" value="now"> Move to Done right away</label>
+
       <h3>Sync with Cloudflare</h3>
       <p>Paste the address of your Now and Then Worker and its access token. The README explains how to set them up. Leave both empty to keep your lists on this device only.</p>
       <label class="field">Worker address
@@ -49,12 +53,6 @@
         <input type="password" id="syncToken" autocomplete="off" spellcheck="false">
       </label>
       <div class="msg" id="syncMsg" role="status"></div>
-
-      <h3>Testing</h3>
-      <p>Pretend it is the next morning, to see finished todos move to Done.</p>
-      <div class="row" style="justify-content:flex-start">
-        <button class="btn" type="button" id="nextDay">Start next day</button>
-      </div>
 
       <h3>About</h3>
       <p class="version" id="versionInfo"></p>

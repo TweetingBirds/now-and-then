@@ -3,7 +3,7 @@
 A notebook-style todo list, made for Tiffany. It works the way her paper notebook does:
 
 - **Now** is today's page. **Tomorrow** is the next page. **Later** is for things to remember someday.
-- Checked-off todos stay where they are for the rest of the day. The next morning they move to **Done**, grouped by date.
+- Checked-off todos stay where they are for the rest of the day. The next morning they move to **Done**, grouped by date. A setting can move them to Done as soon as they are checked instead.
 - Each morning, unfinished Tomorrow todos move into Now (this can be turned off in Settings).
 - Lists can be renamed, recolored, reordered and added, up to 10.
 - Todos move between lists by dragging the ⋮⋮ handle, or with the ••• menu.
@@ -68,5 +68,3 @@ Any static file server works, for example:
 ```sh
 npx serve app
 ```
-
-The Settings sheet has a **Start next day** button that pretends it is the next morning, to try out the Done rollover without waiting until midnight.
