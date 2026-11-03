@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Now and Then</title>
+  <meta name="description" content="A notebook-style todo list: Now, Tomorrow, Later and Done.">
+  <meta name="theme-color" content="#eef0f3" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#12161c" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Now and Then">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Atkinson+Hyperlegible:wght@400;700&family=Kalam:wght@400&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <h1>Now and Then</h1>
+      <span class="date" id="today"></span>
+    </div>
+    <div class="tools">
+      <button class="sync" id="syncStatus" type="button" data-state="off">On this device</button>
+      <button class="btn" id="openSettings" type="button">Settings</button>
+    </div>
+  </header>
+  <main class="board" id="board"></main>
+  <div class="toast" id="toast" hidden></div>
+
+  <dialog class="settings" id="settings">
+    <form method="dialog" id="settingsForm">
+      <h2>Settings</h2>
+
+      <h3>Every morning</h3>
+      <label class="toggle"><input type="checkbox" id="carry"> Move unfinished Tomorrow todos into Now</label>
+
+      <h3>Sync with Cloudflare</h3>
+      <p>Paste the address of your Now and Then Worker and its access token. The README explains how to set them up. Leave both empty to keep your lists on this device only.</p>
+      <label class="field">Worker address
+        <input type="url" id="syncUrl" placeholder="https://now-and-then-sync.yourname.workers.dev" autocomplete="off" spellcheck="false">
+      </label>
+      <label class="field">Access token
+        <input type="password" id="syncToken" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="msg" id="syncMsg" role="status"></div>
+
+      <h3>Testing</h3>
+      <p>Pretend it is the next morning, to see finished todos move to Done.</p>
+      <div class="row" style="justify-content:flex-start">
+        <button class="btn" type="button" id="nextDay">Start next day</button>
+      </div>
+
+      <div class="row">
+        <button class="btn" value="cancel" formnovalidate>Close</button>
+        <button class="btn primary" type="button" id="saveSync">Save and sync</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
