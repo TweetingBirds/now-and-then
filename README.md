@@ -29,7 +29,7 @@ Each person has their own board and their own access token. The Worker looks for
 ### 1. Turn on GitHub Pages
 
 In the repo, go to **Settings → Pages** and set **Source** to **GitHub Actions**. After the next push to `main`, the app is at
-`https://tweetingbirds.github.io/now-and-then/`.
+`https://tweetingbirds.com/now-and-then/` (the TweetingBirds custom domain).
 
 ### 2. Connect Cloudflare
 
