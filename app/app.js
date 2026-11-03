@@ -6,7 +6,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.1.0";
+  const APP_VERSION = "1.1.1";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -583,6 +583,7 @@
     document.getElementById("syncMsg").textContent = "";
     showVersion();
     dlg.showModal();
+    dlg.querySelector(".settings-body").scrollTop = 0;
     checkForUpdate();
   });
   document.getElementById("syncStatus").addEventListener("click", () => {
