@@ -230,9 +230,28 @@ body { margin: 0; padding-top: env(safe-area-inset-top, 0px); padding-bottom: en
 dialog.settings {
   border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink);
   width: min(460px, calc(100vw - 32px)); padding: 0; box-shadow: var(--shadow);
+  /* Fit the screen (minus notch/home bar) so only the body scrolls, never the header. */
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  overflow: hidden;
 }
+dialog.settings[open] { display: flex; flex-direction: column; }
 dialog.settings::backdrop { background: rgb(10 15 25 / .45); }
-.settings form { display: flex; flex-direction: column; gap: 14px; padding: 20px; }
+body:has(dialog.settings[open]) { overflow: hidden; }
+.settings form { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.settings-head {
+  flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 10px 10px 20px; border-bottom: 1px solid var(--line); background: var(--surface);
+}
+.settings-body {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 14px; padding: 16px 20px 20px;
+}
+.settings .close-x {
+  flex: none; width: 44px; height: 44px; display: grid; place-items: center;
+  border: none; background: transparent; border-radius: 10px; color: var(--muted);
+}
+.settings .close-x:hover { background: color-mix(in oklab, var(--ink) 8%, transparent); color: var(--ink); }
 .settings h2 { font-family: var(--font-display); margin: 0; font-size: 1.3rem; }
 .settings h3 { font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 6px 0 0; }
 .settings p { margin: 0; color: var(--muted); font-size: .88rem; }

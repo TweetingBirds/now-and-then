@@ -35,7 +35,13 @@
 
   <dialog class="settings" id="settings">
     <form method="dialog" id="settingsForm">
-      <h2>Settings</h2>
+      <div class="settings-head">
+        <h2>Settings</h2>
+        <button class="close-x" value="cancel" formnovalidate aria-label="Close settings" title="Close">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>
+        </button>
+      </div>
+      <div class="settings-body">
 
       <h3>Every morning</h3>
       <label class="toggle"><input type="checkbox" id="carry"> Move unfinished Tomorrow todos into Now</label>
@@ -64,6 +70,7 @@
       <div class="row">
         <button class="btn" value="cancel" formnovalidate>Close</button>
         <button class="btn primary" type="button" id="saveSync">Save and sync</button>
+      </div>
       </div>
     </form>
   </dialog>
