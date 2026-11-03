@@ -4,6 +4,14 @@
 (() => {
   "use strict";
 
+  // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
+  // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
+  const APP_VERSION = "1.0.0";
+  const BUILD_NUMBER = "__BUILD_NUMBER__";
+  const BUILD_SHA = "__BUILD_SHA__";
+  const BUILD_DATE = "__BUILD_DATE__";
+  const STAMPED = !BUILD_NUMBER.startsWith("__");
+
   const BOARD_KEY = "nat.board.v1";
   const LOCAL_KEY = "nat.local.v1"; // per-device: lastDay, dayOffset, sync settings
   const MAX_LISTS = 10;
@@ -559,7 +567,9 @@
     document.getElementById("syncUrl").value = local.syncUrl;
     document.getElementById("syncToken").value = local.syncToken;
     document.getElementById("syncMsg").textContent = "";
+    showVersion();
     dlg.showModal();
+    checkForUpdate();
   });
   document.getElementById("syncStatus").addEventListener("click", () => {
     if (syncConfigured()) sync(); else document.getElementById("openSettings").click();
@@ -598,8 +608,43 @@
   window.addEventListener("offline", idleStatus);
   setInterval(() => { if (local.lastDay !== todayKey()) checkDay(); }, 60 * 1000);
 
+  // ---------- version & updates ----------
+  function showVersion() {
+    let text = `Version ${APP_VERSION}`;
+    if (STAMPED) {
+      const when = new Date(BUILD_DATE);
+      text += ` · Build ${BUILD_NUMBER} (${BUILD_SHA})`;
+      if (!isNaN(when)) text += ` · ${when.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
+    } else {
+      text += " · Local build";
+    }
+    document.getElementById("versionInfo").textContent = text;
+  }
+  // version.json is written at deploy time. If the live build differs from the
+  // one running here, offer a reload so the page shows what's actually deployed.
+  let liveBuild = null;
+  async function checkForUpdate() {
+    if (!STAMPED || !navigator.onLine) return;
+    const msg = document.getElementById("updateMsg"), btn = document.getElementById("reloadApp");
+    try {
+      const res = await fetch("version.json", { cache: "no-store" });
+      if (!res.ok) return;
+      const live = await res.json();
+      if (String(live.build) === BUILD_NUMBER) { msg.textContent = "This is the latest version."; btn.hidden = true; return; }
+      const fresh = liveBuild !== live.build;
+      liveBuild = live.build;
+      msg.textContent = `Build ${live.build} is available.`; btn.hidden = false;
+      if (fresh && !dlg.open) toast(`A new version is ready. Open Settings to reload.`);
+    } catch { /* offline or blocked: keep what we show */ }
+  }
+  document.getElementById("reloadApp").addEventListener("click", async () => {
+    try { const reg = await navigator.serviceWorker?.getRegistration(); await reg?.update(); } catch {}
+    location.reload();
+  });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkForUpdate(); });
+
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
+    navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(() => {});
   }
 
   // ---------- boot ----------
@@ -609,6 +654,7 @@
   idleStatus();
   render();
   sync();
+  checkForUpdate();
 
   // exposed for tests
   window.__nat = { mergeBoards, get board() { return board; } };

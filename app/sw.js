@@ -1,6 +1,7 @@
 // Offline support: the app shell is cached on install; fonts are cached as they load.
-// Bump VERSION whenever app files change so phones pick up the new version.
-const VERSION = "nat-v2";
+// The deploy workflow stamps the build into VERSION, so every deploy gets a fresh
+// cache and the old one is cleared. No need to bump it by hand.
+const VERSION = "nat-__BUILD_NUMBER__-__BUILD_SHA__";
 const SHELL = ["./", "index.html", "styles.css", "app.js", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/icon-maskable-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -32,9 +33,12 @@ self.addEventListener("fetch", (e) => {
   }
 
   // Our own files: network first (so updates show up), falling back to the cache offline.
+  // "no-cache" revalidates with the server instead of trusting the browser's HTTP
+  // cache, which GitHub Pages lets hold files for up to 10 minutes.
   if (url.origin === self.location.origin) {
+    if (url.pathname.endsWith("/version.json")) return; // always straight from the network
     e.respondWith(
-      fetch(req).then((res) => {
+      fetch(req, { cache: "no-cache" }).then((res) => {
         if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
         return res;
       }).catch(() => caches.match(req).then((hit) => hit || caches.match("index.html")))
