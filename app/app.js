@@ -202,6 +202,9 @@
   }
   document.addEventListener("pointerdown", e => { if (openPop && !openPop.contains(e.target) && !e.target.closest("[data-pop-trigger]")) closePop(); });
   document.addEventListener("keydown", e => { if (e.key === "Escape") closePop(); });
+  // Menus float above everything (so the last todo's menu isn't hidden under the add row), so close them if what they point at scrolls away.
+  document.addEventListener("scroll", e => { if (openPop && !openPop.contains(e.target)) closePop(); }, true);
+  window.addEventListener("resize", () => closePop());
 
   function render() {
     const scroll = boardEl.scrollLeft;
@@ -274,12 +277,27 @@
     });
   }
 
+  // Menus live on <body> with fixed positioning, so a list's scroll area can't clip them.
+  // They open below the trigger, or above it when there isn't room below.
   function popAt(anchor, trigger, ...kids) {
     closePop();
     openPop = el("div", { class: "pop", role: "menu" }, ...kids);
-    anchor.append(openPop);
+    document.body.append(openPop);
     trigger.setAttribute("aria-expanded", "true");
+    placePop(anchor, trigger, "right");
     return openPop;
+  }
+  function placePop(anchor, trigger, align) {
+    const pop = openPop, gap = 4, pad = 8;
+    const vw = document.documentElement.clientWidth, vh = window.innerHeight;
+    const a = anchor.getBoundingClientRect(), t = trigger.getBoundingClientRect();
+    pop.style.maxHeight = (vh - pad * 2) + "px";
+    const w = pop.offsetWidth, h = pop.offsetHeight;
+    let left = align === "left" ? a.left + 8 : t.right - w;
+    left = Math.max(pad, Math.min(left, vw - w - pad));
+    let top = t.bottom + gap;
+    if (top + h > vh - pad) top = t.top - gap - h >= pad ? t.top - gap - h : Math.max(pad, vh - pad - h);
+    pop.style.left = left + "px"; pop.style.top = top + "px";
   }
 
   function todoPop(e, t, row, text) {
@@ -297,7 +315,7 @@
     let pending = null;
     const preview = c => { head.closest(".col").style.setProperty("--c", c); pending = c; };
     const apply = c => { touch(list, { color: c }); commit(); };
-    const pop = popAt(head, e.currentTarget,
+    popAt(head, e.currentTarget,
       el("div", { class: "lbl" }, "Page color"),
       el("div", { class: "swatches" }, PALETTE.map(c => el("button", {
         style: `background:${c}`, "aria-label": "Color " + c, "aria-pressed": String(c === list.color), onclick: () => apply(c),
@@ -306,7 +324,7 @@
         el("input", { type: "color", value: list.color, oninput: ev => preview(ev.target.value), onchange: ev => apply(ev.target.value) }),
         "Custom color"),
     );
-    pop.style.left = "8px"; pop.style.right = "auto";
+    placePop(head, e.currentTarget, "left");
   }
 
   function listPop(e, list, head) {
@@ -387,43 +405,140 @@
     commit();
   }
 
+  // One finger drags a todo by its grip. While it is held, a second finger can swipe the board
+  // sideways to reach another list; holding the todo near the left or right edge also scrolls.
   let drag = null;
   function startDrag(e, t, row) {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || drag) return;
     e.preventDefault();
-    drag = { t, row, x: e.clientX, y: e.clientY, started: false, ghost: null, ph: el("div", { class: "placeholder" }), target: null, before: null };
+    drag = {
+      t, row, id: e.pointerId, x: e.clientX, y: e.clientY, lastX: e.clientX, lastY: e.clientY,
+      started: false, ghost: null, ph: el("div", { class: "placeholder" }), target: null, before: null,
+      swipe: null, raf: 0,
+    };
+    document.body.classList.add("is-holding");
+    window.addEventListener("pointerdown", onDown, true);
     window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp, { once: true });
-    window.addEventListener("pointercancel", onUp, { once: true });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    document.addEventListener("selectstart", noSelect);
+    document.addEventListener("touchmove", noTouchScroll, { passive: false });
   }
+  const noSelect = e => e.preventDefault();
+  const noTouchScroll = e => { if (drag && drag.started) e.preventDefault(); };
+
+  function beginDrag() {
+    drag.started = true; closePop();
+    document.getSelection()?.removeAllRanges();
+    drag.ghost = el("div", { class: "ghost" }, drag.t.text); document.body.append(drag.ghost);
+    drag.row.classList.add("dragging"); document.body.classList.add("is-dragging");
+    drag.raf = requestAnimationFrame(edgeScroll);
+  }
+
+  // A second finger (or any other pointer) landing while a todo is held becomes the swipe finger.
+  function onDown(e) {
+    if (!drag || e.pointerId === drag.id) return;
+    e.preventDefault(); e.stopPropagation();
+    if (!drag.started) beginDrag();
+    drag.swipe = { id: e.pointerId, x: e.clientX, scroll: boardEl.scrollLeft, lastX: e.clientX, v: 0, time: e.timeStamp };
+  }
+
   function onMove(e) {
     if (!drag) return;
+    const sw = drag.swipe;
+    if (sw && e.pointerId === sw.id) {
+      e.preventDefault();
+      const dt = Math.max(1, e.timeStamp - sw.time);
+      sw.v = (e.clientX - sw.lastX) / dt; sw.lastX = e.clientX; sw.time = e.timeStamp;
+      boardEl.scrollLeft = sw.scroll - (e.clientX - sw.x);
+      updateDrop();
+      return;
+    }
+    if (e.pointerId !== drag.id) return;
     if (!drag.started) {
       if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 4) return;
-      drag.started = true; closePop();
-      drag.ghost = el("div", { class: "ghost" }, drag.t.text); document.body.append(drag.ghost);
-      drag.row.classList.add("dragging"); document.body.classList.add("is-dragging");
+      beginDrag();
     }
+    drag.lastX = e.clientX; drag.lastY = e.clientY;
     drag.ghost.style.left = (e.clientX - 20) + "px"; drag.ghost.style.top = (e.clientY - 18) + "px";
-    const under = document.elementFromPoint(e.clientX, e.clientY);
+    updateDrop();
+  }
+
+  // Work out which list and position sit under the held todo. Called on every move and whenever the board scrolls under it.
+  function updateDrop() {
+    if (!drag || !drag.started) return;
+    const x = drag.lastX, y = drag.lastY;
+    const under = document.elementFromPoint(x, y);
     const col = under && under.closest(".col[data-list]");
     if (!col) { drag.ph.remove(); drag.target = null; return; }
     const body = col.querySelector(".col-body");
     const rows = [...body.querySelectorAll(".todo:not(.dragging)")];
-    const before = rows.find(r => e.clientY < r.getBoundingClientRect().top + r.offsetHeight / 2) || null;
+    const before = rows.find(r => y < r.getBoundingClientRect().top + r.offsetHeight / 2) || null;
+    if (drag.target !== col.dataset.list) document.querySelectorAll(".empty[hidden]").forEach(n => n.removeAttribute("hidden"));
     body.querySelector(".empty")?.setAttribute("hidden", "");
-    before ? body.insertBefore(drag.ph, before) : body.append(drag.ph);
+    if (before ? drag.ph.nextSibling !== before || drag.ph.parentNode !== body : drag.ph.parentNode !== body || drag.ph.nextSibling) {
+      before ? body.insertBefore(drag.ph, before) : body.append(drag.ph);
+    }
     drag.target = col.dataset.list; drag.before = before ? before.dataset.id : null;
-    const r = boardEl.getBoundingClientRect();
-    if (e.clientX > r.right - 40) boardEl.scrollLeft += 12; else if (e.clientX < r.left + 40) boardEl.scrollLeft -= 12;
   }
-  function onUp() {
-    window.removeEventListener("pointermove", onMove);
+
+  // Holding the todo near a side of the board keeps scrolling that way, faster the closer it gets.
+  function edgeScroll() {
+    if (!drag || !drag.started) return;
+    if (!drag.swipe) {
+      const r = boardEl.getBoundingClientRect(), zone = Math.min(56, r.width / 6);
+      const x = drag.lastX;
+      let step = 0;
+      if (x > r.right - zone) step = Math.ceil(14 * (x - (r.right - zone)) / zone);
+      else if (x < r.left + zone) step = -Math.ceil(14 * ((r.left + zone) - x) / zone);
+      if (step) {
+        const before = boardEl.scrollLeft;
+        boardEl.scrollLeft += step;
+        if (boardEl.scrollLeft !== before) updateDrop();
+      }
+    }
+    drag.raf = requestAnimationFrame(edgeScroll);
+  }
+
+  // When the swipe finger lifts, settle on the nearest list (or the next one if it was flicked).
+  function settleBoard(v = 0) {
+    const cols = [...boardEl.children];
+    if (!cols.length) return;
+    const pad = parseFloat(getComputedStyle(boardEl).paddingLeft) || 0;
+    const base = boardEl.getBoundingClientRect().left + pad;
+    const offsets = cols.map(c => boardEl.scrollLeft + c.getBoundingClientRect().left - base);
+    let i = offsets.reduce((best, o, k) => Math.abs(o - boardEl.scrollLeft) < Math.abs(offsets[best] - boardEl.scrollLeft) ? k : best, 0);
+    if (Math.abs(v) > 0.4) {
+      const cur = offsets[i];
+      if (v < 0 && cur <= boardEl.scrollLeft + 1) i = Math.min(cols.length - 1, i + 1);
+      if (v > 0 && cur >= boardEl.scrollLeft - 1) i = Math.max(0, i - 1);
+    }
+    const max = boardEl.scrollWidth - boardEl.clientWidth;
+    boardEl.scrollTo({ left: Math.max(0, Math.min(max, offsets[i])), behavior: "smooth" });
+  }
+  boardEl.addEventListener("scroll", () => updateDrop(), { passive: true });
+
+  function onUp(e) {
+    if (!drag) return;
+    if (drag.swipe && e.pointerId === drag.swipe.id) {
+      const v = drag.swipe.v; drag.swipe = null;
+      settleBoard(v);
+      return;
+    }
+    if (e.pointerId !== drag.id) return;
     const d = drag; drag = null;
-    document.body.classList.remove("is-dragging");
-    if (!d || !d.started) return;
+    window.removeEventListener("pointerdown", onDown, true);
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onUp);
+    document.removeEventListener("selectstart", noSelect);
+    document.removeEventListener("touchmove", noTouchScroll);
+    document.body.classList.remove("is-dragging", "is-holding");
+    cancelAnimationFrame(d.raf);
+    document.getSelection()?.removeAllRanges();
+    if (!d.started) return;
     d.ghost.remove(); d.ph.remove();
-    if (d.target) {
+    if (d.target && e.type !== "pointercancel") {
       const from = d.t.listId;
       moveTodo(d.t, d.target, d.before);
       if (from !== d.target) toast(`Moved to ${listById(d.target).name}`);
