@@ -50,13 +50,22 @@
   }
 
   // Same merge the Worker runs: newest edit wins per list, per todo, and for settings.
+  // Unlike the Worker, it keeps a's objects (this device's board) and copies the winning
+  // fields into them. The rendered rows and an in-progress drag hold references to those
+  // objects, so replacing them would make the next drop or edit change a copy that is no
+  // longer on the board, and the todo would snap back.
   function mergeBoards(a, b) {
     const cutoff = now() - TOMBSTONE_DAYS * 864e5;
     const mergeById = (x = [], y = []) => {
       const m = new Map();
-      for (const item of [...x, ...y]) {
+      for (const item of x) m.set(item.id, item);
+      for (const item of y) {
         const prev = m.get(item.id);
-        if (!prev || (item.updatedAt || 0) >= (prev.updatedAt || 0)) m.set(item.id, item);
+        if (!prev) m.set(item.id, item);
+        else if (prev !== item && (item.updatedAt || 0) >= (prev.updatedAt || 0)) {
+          for (const k of Object.keys(prev)) if (!(k in item)) delete prev[k];
+          Object.assign(prev, item);
+        }
       }
       return [...m.values()].filter(i => !(i.deleted && (i.updatedAt || 0) < cutoff));
     };
