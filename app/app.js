@@ -6,7 +6,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.1.1";
+  const APP_VERSION = "1.2.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -24,7 +24,7 @@
   const read = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
   const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
 
-  let local = Object.assign({ lastDay: null, syncUrl: "", syncToken: "", pristine: false, synced: false }, read(LOCAL_KEY) || {});
+  let local = Object.assign({ lastDay: null, syncUrl: "", syncToken: "", pristine: false, synced: false, board: "", switching: false, otherBoard: "" }, read(LOCAL_KEY) || {});
   let board = read(BOARD_KEY);
   if (!board) { board = starterBoard(); local.pristine = true; write(LOCAL_KEY, local); }
 
@@ -148,6 +148,9 @@
     else setStatus("ok", "Synced");
   }
 
+  // "nate" -> "Nate's board"
+  const boardLabel = (name) => name ? name.charAt(0).toUpperCase() + name.slice(1) + "'s board" : "your board";
+
   function schedulePush() {
     if (!syncConfigured()) return;
     clearTimeout(pushTimer);
@@ -161,26 +164,29 @@
     if (!navigator.onLine) { idleStatus(); return; }
     syncing = true; setStatus("busy", "Syncing…");
     try {
-      // First sync on a device that still has only the welcome todos: take the
-      // saved board as is, so the welcome todos aren't added to it a second time.
-      if (!local.synced && local.pristine) {
+      // First sync on a device that still has only the welcome todos, or that is
+      // switching from one person's board to another's: take the saved board as is,
+      // so this device's lists aren't merged into it.
+      if (!local.synced && (local.pristine || local.switching)) {
         const got = await fetch(dataUrl(), { headers: { "Authorization": "Bearer " + local.syncToken } });
         if (got.status === 401) throw new Error("The access token was not accepted.");
+        if (got.status === 409) throw new Error(await clashMessage(got));
         if (!got.ok) throw new Error("The Worker answered " + got.status + ".");
         const remote = await got.json();
         if (remote.lists && remote.lists.some(l => !l.deleted)) board = remote;
       }
-      const res = await fetch(dataUrl(), {
-        method: "PUT",
-        headers: { "Authorization": "Bearer " + local.syncToken, "Content-Type": "application/json" },
-        body: JSON.stringify(board),
-      });
+      const headers = { "Authorization": "Bearer " + local.syncToken, "Content-Type": "application/json" };
+      if (local.board) headers["X-Expect-Board"] = local.board;
+      const res = await fetch(dataUrl(), { method: "PUT", headers, body: JSON.stringify(board) });
       if (res.status === 401) throw new Error("The access token was not accepted.");
+      if (res.status === 409) throw new Error(await clashMessage(res));
       if (!res.ok) throw new Error("The Worker answered " + res.status + ".");
       const merged = await res.json();
+      local.board = res.headers.get("X-Board") || local.board;
+      local.switching = false; local.otherBoard = "";
       // Edits made while the request was in flight are newer, so they survive the merge.
       board = mergeBoards(board, merged);
-      if (!local.synced) { local.synced = true; write(LOCAL_KEY, local); }
+      local.synced = true; write(LOCAL_KEY, local);
       repairOrphans();
       write(BOARD_KEY, board);
       if (!isBusyEditing()) render();
@@ -194,6 +200,19 @@
       syncing = false;
       if (again) { again = false; schedulePush(); }
     }
+  }
+  // The Worker answers 409 instead of merging when the token opens a different
+  // board than this device last synced with, or when two people share a token.
+  async function clashMessage(res) {
+    let info = {};
+    try { info = await res.json(); } catch (e) {}
+    if (info.error === "board changed") {
+      local.otherBoard = info.board || "?"; write(LOCAL_KEY, local);
+      return `This token now opens ${boardLabel(info.board)}, not ${boardLabel(info.expected)}. Nothing was synced. ` +
+        `If that's a mistake, fix the token in the Worker. If it's what you want, tap Save and sync to switch this device to ${boardLabel(info.board)}.`;
+    }
+    if (info.error === "token clash") return `The Worker gives the same token to ${(info.boards || []).join(" and ")}. Nothing was synced. Give each person their own token.`;
+    return "The Worker answered 409.";
   }
   function isBusyEditing() {
     const a = document.activeElement;
@@ -580,7 +599,9 @@
     document.getElementById(board.settings.doneNow ? "doneNow" : "doneLater").checked = true;
     document.getElementById("syncUrl").value = local.syncUrl;
     document.getElementById("syncToken").value = local.syncToken;
-    document.getElementById("syncMsg").textContent = "";
+    const sm = document.getElementById("syncMsg");
+    if (local.otherBoard) { sm.className = "msg bad"; sm.textContent = document.getElementById("syncStatus").title; }
+    else { sm.className = "msg"; sm.textContent = syncConfigured() && local.board ? `Syncing with ${boardLabel(local.board)}.` : ""; }
     showVersion();
     dlg.showModal();
     dlg.querySelector(".settings-body").scrollTop = 0;
@@ -603,12 +624,18 @@
     const token = document.getElementById("syncToken").value.trim();
     if ((url && !token) || (!url && token)) { msg.className = "msg bad"; msg.textContent = "Fill in both the address and the token, or leave both empty."; return; }
     if (url && !/^https:\/\//i.test(url)) { msg.className = "msg bad"; msg.textContent = "The address should start with https://"; return; }
-    if (url !== local.syncUrl || token !== local.syncToken) local.synced = false;
+    // A new token (or a confirmed switch after a "board changed" warning) means a
+    // different board: load it instead of merging this device's lists into it.
+    if (url !== local.syncUrl || token !== local.syncToken || local.otherBoard) {
+      local.synced = false;
+      if (local.board) { local.switching = true; local.board = ""; }
+      local.otherBoard = "";
+    }
     local.syncUrl = url; local.syncToken = token; write(LOCAL_KEY, local);
     if (!url) { msg.className = "msg"; msg.textContent = "Sync is off. Lists stay on this device."; idleStatus(); return; }
     msg.className = "msg"; msg.textContent = "Connecting…";
     const result = await sync();
-    if (result === true) { msg.textContent = "Connected. Your lists are synced."; setTimeout(() => dlg.close(), 900); }
+    if (result === true) { msg.textContent = `Connected to ${boardLabel(local.board)}. Your lists are synced.`; render(); setTimeout(() => dlg.close(), 1400); }
     else { msg.className = "msg bad"; msg.textContent = "Couldn't sync: " + result; }
   });
 

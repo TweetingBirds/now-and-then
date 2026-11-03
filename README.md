@@ -22,7 +22,7 @@ It's a progressive web app: open it in Safari or Chrome and choose **Add to Home
 
 Data lives in the browser's local storage first. When sync is set up, the app sends its whole board to the Worker after each change and whenever it's reopened. The Worker merges it with the stored board (the newest edit wins for each list, each todo and the settings) and sends the result back, so a phone and an iPad can both be used without overwriting each other.
 
-Each person has their own board and their own access token. The Worker looks for secrets named `TOKEN_<NAME>` and stores that person's board under the KV key `board:<name>`. To share one board between two people, give them the same token.
+Each person has their own board and their own access token. The Worker looks for secrets named `TOKEN_<NAME>` and stores that person's board under the KV key `board:<name>`. To share one board, two people use the same token (one `TOKEN_<NAME>` secret, for example `TOKEN_FAMILY`). Two secrets must never hold the same value.
 
 ## Setup
 
@@ -41,21 +41,20 @@ Add these as repository secrets under **Settings → Secrets and variables → A
 | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | Cloudflare dashboard → My Profile → API Tokens → Create Token → **Edit Cloudflare Workers** template. |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → Workers & Pages → the Account ID on the right. |
-| `TOKEN_NATE` | Nate's access token. Any long random string, e.g. from `openssl rand -hex 32`. |
-| `TOKEN_TIFFANY` | Tiffany's access token, made the same way. |
 
 Then run **Actions → Deploy sync Worker to Cloudflare → Run workflow**. The Worker is deployed as `now-and-then-sync`, at
 `https://now-and-then-sync.<your-subdomain>.workers.dev`. Opening that address in a browser shows "Now and Then sync is running."
 
-To add another person, add a `TOKEN_<NAME>` secret and a matching line in `.github/workflows/worker.yml`.
-
-Prefer the command line? From `worker/`:
+Each person's access token is a **Worker secret**, not a repo secret. Make one long random string per person (for example `openssl rand -hex 32`) and set it from `worker/`:
 
 ```sh
-npx wrangler deploy
 npx wrangler secret put TOKEN_NATE
 npx wrangler secret put TOKEN_TIFFANY
 ```
+
+or in the Cloudflare dashboard under **Workers & Pages → now-and-then-sync → Settings → Variables and Secrets**. Deploys keep these secrets as they are, so changing the Worker code never changes anyone's token. To add another person, add another `TOKEN_<NAME>` secret.
+
+Every token must be different. If two `TOKEN_*` secrets hold the same value the Worker refuses to sync with it instead of guessing whose board it is. The Worker also tells the app whose board a token opens (Settings shows "Syncing with Nate's board"), and if a device's token suddenly opens a different board than before, the app stops and warns instead of merging the two boards.
 
 ### 3. Connect each phone
 
