@@ -333,3 +333,35 @@ body:has(dialog.settings[open]) { overflow: hidden; }
 .settings .version { font-variant-numeric: tabular-nums; }
 .settings .row.update { align-items: center; }
 .settings .row.update .msg:empty { display: none; }
+
+/* ---------- Appearance, haptics and keyboard shortcuts ---------- */
+/* Theme picker: a three-way segmented control. */
+.settings .choice {
+  display: flex; border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 3px; background: var(--bg);
+}
+.settings .choice label {
+  flex: 1; text-align: center; padding: 7px 6px; border-radius: 7px; font-size: .88rem; color: var(--muted); cursor: pointer;
+}
+.settings .choice input { position: absolute; opacity: 0; pointer-events: none; }
+.settings .choice label:has(input:checked) { background: var(--surface); color: var(--ink); font-weight: 700; box-shadow: var(--shadow); }
+.settings .choice label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Shortcuts only matter with a keyboard and mouse; hide the button on phones. */
+@media (hover: none), (pointer: coarse) { .kb-only { display: none !important; } }
+kbd {
+  display: inline-block; min-width: 1.6em; padding: 1px 6px; text-align: center;
+  font-family: var(--font-body); font-size: .8rem; line-height: 1.5; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px;
+}
+.keylist { display: grid; grid-template-columns: max-content 1fr; gap: 8px 14px; margin: 0; align-items: center; font-size: .9rem; }
+.keylist dt { white-space: nowrap; color: var(--muted); font-size: .8rem; }
+.keylist dd { margin: 0; }
+
+/* The todo picked with the arrow keys. */
+.todo:focus { outline: none; }
+.todo:focus-visible {
+  outline: none; border-radius: 6px;
+  background: color-mix(in oklab, var(--c) 22%, var(--surface));
+  box-shadow: inset 3px 0 0 color-mix(in oklab, var(--c) 75%, var(--ink));
+}
+.todo:focus-visible .more, .todo:focus-visible .grip { opacity: 1; }

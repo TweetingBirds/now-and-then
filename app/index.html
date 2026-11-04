@@ -18,6 +18,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Atkinson+Hyperlegible:wght@400;700&family=Kalam:wght@400&display=swap">
   <link rel="stylesheet" href="styles.css">
+  <!-- Apply a Light/Dark choice from Settings before first paint, so there's no flash. -->
+  <script>try{var t=(JSON.parse(localStorage.getItem("nat.local.v1"))||{}).theme;if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body>
   <header class="top">
@@ -49,6 +51,18 @@
       <h3>Finished todos</h3>
       <label class="toggle"><input type="radio" name="doneWhen" id="doneLater" value="later"> Keep in their list until the next day, then move to Done</label>
       <label class="toggle"><input type="radio" name="doneWhen" id="doneNow" value="now"> Move to Done right away</label>
+
+      <h3>Appearance</h3>
+      <div class="choice" role="radiogroup" aria-label="Theme">
+        <label><input type="radio" name="theme" value="system"> Match system</label>
+        <label><input type="radio" name="theme" value="light"> Light</label>
+        <label><input type="radio" name="theme" value="dark"> Dark</label>
+      </div>
+      <label class="toggle" id="hapticsRow"><input type="checkbox" id="haptics"> Buzz when picking up and dropping a todo</label>
+      <div class="row kb-only" style="justify-content:flex-start;align-items:center">
+        <button class="btn" type="button" id="showKeys">Keyboard shortcuts</button>
+        <span class="msg">or press <kbd>?</kbd></span>
+      </div>
 
       <h3>Sync with Cloudflare</h3>
       <p>Paste the address of your Now and Then Worker and its access token. The README explains how to set them up. Leave both empty to keep your lists on this device only.</p>
@@ -97,6 +111,44 @@
         <button class="btn" value="cancel" formnovalidate>Close</button>
         <button class="btn primary" type="button" id="saveSync">Save and sync</button>
       </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="settings keys" id="keys" aria-labelledby="keysTitle">
+    <form method="dialog">
+      <div class="settings-head">
+        <h2 id="keysTitle">Keyboard shortcuts</h2>
+        <button class="close-x" value="cancel" aria-label="Close shortcuts" title="Close">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>
+        </button>
+      </div>
+      <div class="settings-body">
+        <h3>Adding</h3>
+        <dl class="keylist">
+          <dt><kbd>N</kbd></dt><dd>New todo in Now</dd>
+          <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>New todo in that list</dd>
+          <dt><kbd>Esc</kbd></dt><dd>Leave the add box</dd>
+        </dl>
+        <h3>Getting around</h3>
+        <dl class="keylist">
+          <dt><kbd>↑</kbd> <kbd>↓</kbd> or <kbd>K</kbd> <kbd>J</kbd></dt><dd>Previous or next todo</dd>
+          <dt><kbd>←</kbd> <kbd>→</kbd> or <kbd>H</kbd> <kbd>L</kbd></dt><dd>List to the left or right</dd>
+          <dt><kbd>Esc</kbd></dt><dd>Clear the selection</dd>
+        </dl>
+        <h3>The selected todo</h3>
+        <dl class="keylist">
+          <dt><kbd>X</kbd> or <kbd>Space</kbd></dt><dd>Check or uncheck</dd>
+          <dt><kbd>Return</kbd> or <kbd>E</kbd></dt><dd>Edit the text</dd>
+          <dt><kbd>⇧</kbd> <kbd>←</kbd> <kbd>→</kbd></dt><dd>Move to the list on the left or right</dd>
+          <dt><kbd>⇧</kbd> <kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Move up or down in its list</dd>
+          <dt><kbd>⌫</kbd></dt><dd>Delete</dd>
+        </dl>
+        <h3>Anywhere</h3>
+        <dl class="keylist">
+          <dt><kbd>⌘</kbd> <kbd>,</kbd> or <kbd>,</kbd></dt><dd>Settings</dd>
+          <dt><kbd>?</kbd></dt><dd>This list</dd>
+        </dl>
       </div>
     </form>
   </dialog>

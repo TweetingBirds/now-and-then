@@ -6,7 +6,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.4.0";
+  const APP_VERSION = "1.5.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -25,7 +25,7 @@
   const read = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
   const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
 
-  let local = Object.assign({ lastDay: null, syncUrl: "", syncToken: "", pristine: false, synced: false, board: "", switching: false, otherBoard: "" }, read(LOCAL_KEY) || {});
+  let local = Object.assign({ lastDay: null, syncUrl: "", syncToken: "", pristine: false, synced: false, board: "", switching: false, otherBoard: "", theme: "system", haptics: true }, read(LOCAL_KEY) || {});
   let board = read(BOARD_KEY);
   if (!board) { board = starterBoard(); local.pristine = true; write(LOCAL_KEY, local); }
   // What the Worker last confirmed it has, as { lists: {id: updatedAt}, todos: {...}, settings }.
@@ -436,6 +436,7 @@
   function render() {
     const scroll = boardEl.scrollLeft;
     const focusedId = document.activeElement?.id;
+    const rowFocused = !!document.activeElement?.matches?.(".todo[data-id]");
     closePop();
     document.getElementById("today").textContent = pretty(todayKey());
     const ls = lists();
@@ -448,6 +449,7 @@
     boardEl.append(renderArchive());
     boardEl.scrollLeft = scroll;
     if (focusedId && (focusedId.startsWith("add-") || focusedId === "doneSearch")) document.getElementById(focusedId)?.focus();
+    else if (kbSel && (rowFocused || document.activeElement === document.body)) focusTodo(kbSel);
   }
 
   function renderList(list) {
@@ -745,6 +747,7 @@
     document.getSelection()?.removeAllRanges();
     drag.ghost = el("div", { class: "ghost" }, drag.t.text); document.body.append(drag.ghost);
     drag.row.classList.add("dragging"); document.body.classList.add("is-dragging");
+    haptic("lift");
     drag.raf = requestAnimationFrame(edgeScroll);
   }
 
@@ -792,6 +795,7 @@
     if (before ? drag.ph.nextSibling !== before || drag.ph.parentNode !== body : drag.ph.parentNode !== body || drag.ph.nextSibling) {
       before ? body.insertBefore(drag.ph, before) : body.append(drag.ph);
     }
+    if (drag.target && drag.target !== col.dataset.list) haptic("tick");
     drag.target = col.dataset.list; drag.before = before ? before.dataset.id : null;
   }
 
@@ -853,6 +857,7 @@
     d.ghost.remove(); d.ph.remove();
     if (d.target && e.type !== "pointercancel") {
       const from = d.t.listId;
+      haptic("drop");
       moveTodo(d.t, d.target, d.before);
       if (from !== d.target) toast(`Moved to ${listById(d.target).name}`);
     } else render();
@@ -930,6 +935,181 @@
     if (result === true) { msg.textContent = `Connected to ${boardLabel(local.board)}. Your lists are synced.`; render(); setTimeout(() => dlg.close(), 1400); }
     else { msg.className = "msg bad"; msg.textContent = "Couldn't sync: " + result; }
   });
+
+  // ---------- appearance (per device) ----------
+  // Dark mode follows the system unless this device picked Light or Dark in Settings.
+  // The colors live in styles.css; index.html applies the choice before first paint.
+  const THEME_COLORS = { light: "#eef0f3", dark: "#12161c" };
+  const themeMetas = [...document.querySelectorAll('meta[name="theme-color"]')];
+  function applyTheme() {
+    const t = local.theme === "light" || local.theme === "dark" ? local.theme : "system";
+    if (t === "system") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = t;
+    // Each meta normally matches its own color scheme; an override paints both.
+    themeMetas.forEach(m => {
+      const own = (m.getAttribute("media") || "").includes("dark") ? "dark" : "light";
+      m.setAttribute("content", THEME_COLORS[t === "system" ? own : t]);
+    });
+  }
+  document.querySelectorAll('input[name="theme"]').forEach(r => r.addEventListener("change", () => {
+    local.theme = r.value; write(LOCAL_KEY, local); applyTheme();
+  }));
+
+  // ---------- haptics (per device) ----------
+  // Android and most non-Apple browsers have the Vibration API. Safari on iPhone
+  // doesn't, but iOS 18 plays its own tick when a switch-style checkbox toggles,
+  // so a hidden one stands in there. Macs and other desktops simply stay quiet.
+  const canVibrate = typeof navigator.vibrate === "function";
+  const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  // Desktop Chrome has navigator.vibrate but no motor, so it only counts on touch screens.
+  const hapticsSupported = isIOS || (canVibrate && matchMedia("(pointer: coarse)").matches);
+  let hapticSwitch = null;
+  function haptic(kind) {
+    if (!local.haptics || !hapticsSupported) return;
+    if (canVibrate) { try { navigator.vibrate(kind === "drop" ? 18 : kind === "lift" ? 12 : 6); } catch (e) {} return; }
+    if (!hapticSwitch) {
+      hapticSwitch = el("label", { "aria-hidden": "true", style: "display:none" }, el("input", { type: "checkbox", switch: true, tabindex: "-1" }));
+      document.head.append(hapticSwitch);
+    }
+    hapticSwitch.click();
+  }
+  document.getElementById("hapticsRow").hidden = !hapticsSupported;
+  document.getElementById("haptics").addEventListener("change", e => {
+    local.haptics = e.target.checked; write(LOCAL_KEY, local);
+    if (local.haptics) haptic("drop");
+  });
+  document.getElementById("openSettings").addEventListener("click", () => {
+    const t = ["light", "dark"].includes(local.theme) ? local.theme : "system";
+    document.querySelector(`input[name="theme"][value="${t}"]`).checked = true;
+    document.getElementById("haptics").checked = !!local.haptics;
+  });
+
+  // ---------- keyboard shortcuts ----------
+  // Arrow keys pick a todo (it takes focus, so the browser keeps it in view);
+  // letters act on it. Nothing fires while typing in a box or with a dialog open.
+  const keysDlg = document.getElementById("keys");
+  let kbSel = null; // id of the todo picked with the keyboard
+  const rowOf = id => id ? boardEl.querySelector(`.todo[data-id="${CSS.escape(id)}"]`) : null;
+  const todoById = id => board.todos.find(t => t.id === id && !t.deleted && !t.archived);
+  function focusTodo(id) {
+    const r = rowOf(id);
+    if (!r) { kbSel = null; return false; }
+    kbSel = id; r.tabIndex = -1; r.focus();
+    r.scrollIntoView({ block: "nearest", inline: "nearest" });
+    return true;
+  }
+  // The list most in view: the first one whose left edge is on screen.
+  function listInView() {
+    const ls = lists(), left = boardEl.getBoundingClientRect().left;
+    return ls.find(l => boardEl.querySelector(`.col[data-list="${l.id}"]`)?.getBoundingClientRect().right > left + 40) || ls[0];
+  }
+  function focusAdd(list) {
+    const i = list && document.getElementById("add-" + list.id);
+    if (!i) return;
+    kbSel = null;
+    i.scrollIntoView({ block: "nearest", inline: "nearest" }); i.focus();
+  }
+  // After a todo leaves its list (checked into Done, deleted), pick its neighbor.
+  function reselect(listId, idx) {
+    if (kbSel && rowOf(kbSel) && todoById(kbSel)?.listId === listId) return focusTodo(kbSel);
+    const rest = todosIn(listId);
+    if (rest.length) focusTodo(rest[Math.min(idx, rest.length - 1)].id);
+    else { kbSel = null; document.activeElement?.blur(); }
+  }
+  // The nearest list in direction dir (-1 or 1) that has todos.
+  function neighborList(fromId, dir, needTodos) {
+    const ls = lists();
+    for (let i = ls.findIndex(l => l.id === fromId) + dir; i >= 0 && i < ls.length; i += dir) {
+      if (!needTodos || todosIn(ls[i].id).length) return ls[i];
+    }
+    return null;
+  }
+  const isTyping = a => a && (a.isContentEditable || a.tagName === "TEXTAREA" || a.tagName === "SELECT" ||
+    (a.tagName === "INPUT" && !["checkbox", "radio", "button", "submit", "color"].includes(a.type)));
+  const openSettingsDlg = () => { closePop(); if (keysDlg.open) keysDlg.close(); if (!dlg.open) document.getElementById("openSettings").click(); };
+  const showKeys = () => { closePop(); if (dlg.open) dlg.close(); if (!keysDlg.open) keysDlg.showModal(); };
+  document.getElementById("showKeys").addEventListener("click", showKeys);
+  // A click or tap anywhere ends keyboard selection, so render() won't pull focus back.
+  document.addEventListener("pointerdown", () => { kbSel = null; }, true);
+
+  document.addEventListener("keydown", e => {
+    if (e.defaultPrevented || e.isComposing || drag) return;
+    const k = e.key;
+    if ((e.metaKey || e.ctrlKey) && k === ",") { e.preventDefault(); openSettingsDlg(); return; }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (dlg.open || keysDlg.open) return; // dialogs close themselves on Esc
+    const a = document.activeElement;
+    if (isTyping(a)) {
+      if (k === "Escape" && a.id && a.id.startsWith("add-")) { a.value = ""; a.blur(); }
+      return;
+    }
+    if (openPop) return; // Esc closes the menu (handled above)
+    if (k === "?") { e.preventDefault(); showKeys(); return; }
+    if (k === ",") { e.preventDefault(); openSettingsDlg(); return; }
+    if (!e.shiftKey && (k === "n" || k === "N")) {
+      e.preventDefault(); focusAdd(lists().find(l => l.role === "now") || lists()[0]); return;
+    }
+    if (/^[1-9]$/.test(k)) {
+      const l = lists()[Number(k) - 1];
+      if (l) { e.preventDefault(); focusAdd(l); }
+      return;
+    }
+
+    const row = a && a.matches && a.matches(".todo[data-id]") ? a : null;
+    const t = row ? todoById(row.dataset.id) : null;
+    const key = { j: "ArrowDown", k: "ArrowUp", h: "ArrowLeft", l: "ArrowRight", J: "ArrowDown", K: "ArrowUp", H: "ArrowLeft", L: "ArrowRight" }[k] || k;
+    const arrow = key.startsWith("Arrow");
+
+    if (k === "Escape" && row) { kbSel = null; row.blur(); return; }
+    if (arrow && !t) {
+      // Nothing picked yet: start at the top of the list in view (or the first list with todos).
+      e.preventDefault();
+      const start = listInView();
+      const l = start && todosIn(start.id).length ? start : lists().find(x => todosIn(x.id).length);
+      if (l) focusTodo(todosIn(l.id)[0].id);
+      return;
+    }
+    if (!t) return;
+    const sibs = todosIn(t.listId), idx = sibs.findIndex(x => x.id === t.id);
+
+    if (arrow && e.shiftKey) {
+      e.preventDefault();
+      if (key === "ArrowUp" && idx > 0) { moveTodo(t, t.listId, sibs[idx - 1].id); focusTodo(t.id); }
+      else if (key === "ArrowDown" && idx < sibs.length - 1) { moveTodo(t, t.listId, sibs[idx + 2]?.id || null); focusTodo(t.id); }
+      else if (key === "ArrowLeft" || key === "ArrowRight") {
+        const to = neighborList(t.listId, key === "ArrowLeft" ? -1 : 1, false);
+        if (to) { moveTodo(t, to.id, null); focusTodo(t.id); toast(`Moved to ${to.name}`); }
+      }
+      return;
+    }
+    if (arrow) {
+      e.preventDefault();
+      if (key === "ArrowUp" && idx > 0) focusTodo(sibs[idx - 1].id);
+      else if (key === "ArrowDown" && idx < sibs.length - 1) focusTodo(sibs[idx + 1].id);
+      else if (key === "ArrowLeft" || key === "ArrowRight") {
+        const to = neighborList(t.listId, key === "ArrowLeft" ? -1 : 1, true);
+        if (to) { const ts = todosIn(to.id); focusTodo(ts[Math.min(idx, ts.length - 1)].id); }
+      }
+      return;
+    }
+    if (k === "x" || k === "X" || k === " ") {
+      e.preventDefault(); kbSel = t.id;
+      row.querySelector(".check").click(); // same path as tapping the box, toast included
+      reselect(t.listId, idx);
+      return;
+    }
+    if (k === "Enter" || k === "e" || k === "E") {
+      e.preventDefault(); kbSel = t.id;
+      editText(row.querySelector(".text"), t);
+      return;
+    }
+    if (k === "Backspace" || k === "Delete") {
+      e.preventDefault(); kbSel = null;
+      touch(t, { deleted: true }); commit(); toast("Deleted");
+      reselect(t.listId, idx);
+    }
+  });
+
 
   // ---------- backups ----------
   // A backup file is the board itself plus a few labels, so the same code reads a
@@ -1179,6 +1359,7 @@
   }
 
   // ---------- boot ----------
+  applyTheme();
   repairOrphans();
   rollover();
   write(BOARD_KEY, board);
