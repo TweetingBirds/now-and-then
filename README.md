@@ -21,7 +21,7 @@ It's a progressive web app: open it in Safari or Chrome and choose **Add to Home
 | Path | What it is |
 | --- | --- |
 | `app/` | The web app: plain HTML, CSS and JavaScript, no build step. Deployed to GitHub Pages. |
-| `app/whats-new.html`, `support.html`, `privacy.html`, `terms.html` | Info pages. Each stands on its own (`pages.css`, `pages.js`), so the Support and Privacy URLs can also go on an App Store listing. Add a card to What's New whenever `APP_VERSION` is bumped. Privacy and Terms are drafts until reviewed. |
+| `app/whats-new.html`, `support.html`, `privacy.html`, `terms.html` | Info pages. Each stands on its own (`pages.css`, `pages.js`), so the Support and Privacy URLs can also go on an App Store listing. Add a card to What's New whenever `APP_VERSION` is bumped. |
 | `app/sw.js` | Service worker for offline use. Its cache name is stamped with the build on each deploy. |
 | `worker/` | Cloudflare Worker that stores each person's board in Workers KV. Tests: `npm test` in `worker/` (they also run before every deploy). |
 | `docs/self-hosting.md` | How anyone can run their own sync Worker on Cloudflare's free plan. Linked from Support. |
