@@ -941,7 +941,11 @@
   // Toasts with an Undo button stay up longer, and don't hide while a finger or mouse is on them.
   const toastEl = document.getElementById("toast");
   let toastTimer;
-  function hideToast() { toastEl.hidden = true; undoEntries = null; }
+  // As a popover the toast sits in the top layer, so it shows above an open
+  // Settings dialog instead of behind it. Older browsers keep the plain version.
+  const toastOnTop = typeof toastEl.showPopover === "function";
+  if (toastOnTop) toastEl.popover = "manual";
+  function hideToast() { toastEl.hidden = true; undoEntries = null; if (toastOnTop) try { toastEl.hidePopover(); } catch (e) {} }
   // The second argument is either how long to show the toast (ms) or what Undo needs, from undoable().
   let toastMs = 2400;
   function armToast() { clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, toastMs); }
@@ -952,6 +956,8 @@
     toastEl.replaceChildren(el("span", {}, msg));
     if (undoEntries) toastEl.append(el("button", { class: "toast-undo", type: "button", onclick: () => { clearTimeout(toastTimer); undo(); } }, "Undo"));
     toastEl.hidden = false;
+    // Showing it again puts it above a dialog that opened after it.
+    if (toastOnTop) try { toastEl.hidePopover(); toastEl.showPopover(); } catch (e) {}
     armToast();
   }
   toastEl.addEventListener("pointerenter", () => clearTimeout(toastTimer));
@@ -1071,12 +1077,31 @@
     document.getElementById("syncMore").hidden = !on;
     document.getElementById("deleteZone").hidden = !(on && local.boardKind === "invited");
     document.getElementById("deleteBox").hidden = true;
+    deviceMsg.textContent = "";
     document.getElementById("invites").hidden = !(on && local.admin);
     if (on && local.admin) loadInvites();
   }
-  document.getElementById("deviceLink").addEventListener("click", async () => {
+  // Says what happened right under the button (a toast is easy to miss in
+  // Settings) and what to do next with the link.
+  const deviceBtn = document.getElementById("deviceLink");
+  const deviceMsg = el("p", { class: "msg device-msg", role: "status" });
+  deviceBtn.closest(".row").after(deviceMsg);
+  let deviceTimer;
+  deviceBtn.addEventListener("click", async () => {
     const how = await shareLink(appLink({ connect: local.syncToken, sync: workerBase() }), "Now and Then");
-    if (how === "copied") toast("Link copied. Open it on your other device.");
+    if (!how) return;
+    const next = "Open it on your other device and tap Connect. That device then syncs with " + boardLabel(local.board) + ".";
+    deviceMsg.className = "msg device-msg ok";
+    deviceMsg.textContent = {
+      copied: "Link copied. Send it to your other device (AirDrop, Messages or Mail to yourself, or a note). " + next,
+      shared: "Link sent. " + next,
+      shown: "Copy the link that was shown and send it to your other device. " + next,
+    }[how];
+    if (how === "copied") {
+      deviceBtn.textContent = "Copied ✓";
+      clearTimeout(deviceTimer);
+      deviceTimer = setTimeout(() => { deviceBtn.textContent = "Copy link for another device"; }, 2500);
+    }
   });
 
   const inviteMsg = (text, bad) => { const m = document.getElementById("inviteMsg"); m.className = bad ? "msg bad" : "msg"; m.textContent = text; };
