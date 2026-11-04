@@ -232,6 +232,25 @@
     </form>
   </dialog>
 
+  <dialog class="settings join" id="moveDlg" aria-labelledby="moveTitle">
+    <form method="dialog">
+      <div class="settings-head">
+        <h2 id="moveTitle">Now and Then has a new address</h2>
+        <button class="close-x" value="cancel" formnovalidate aria-label="Close" title="Close">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>
+        </button>
+      </div>
+      <div class="settings-body">
+        <p id="moveWhat"></p>
+        <div class="msg" id="moveMsg" role="status"></div>
+        <div class="row">
+          <button class="btn" value="cancel" formnovalidate>Later</button>
+          <button class="btn primary" type="button" id="moveGo">Move</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
   <dialog class="settings keys" id="keys" aria-labelledby="keysTitle">
     <form method="dialog">
       <div class="settings-head">

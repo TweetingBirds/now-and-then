@@ -6,7 +6,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.10.0";
+  const APP_VERSION = "1.11.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -1363,7 +1363,7 @@
       msg.className = "msg bad"; msg.textContent = e instanceof TypeError ? "Couldn't reach the sync service. Check the connection and try again." : e.message;
     }
   });
-  window.addEventListener("hashchange", readLink);
+  window.addEventListener("hashchange", () => { readMove().then((moving) => { if (!moving) readLink(); }); });
 
   // ---------- appearance (per device) ----------
   // Dark mode follows the system unless this device picked Light or Dark in Settings.
@@ -1775,7 +1775,8 @@
     const msg = document.getElementById("updateMsg"), btn = document.getElementById("reloadApp");
     try {
       const res = await fetch("version.json", { cache: "no-store" });
-      if (!res.ok) return;
+      // At the old address, version.json redirects to the new one: that's the move, not an update.
+      if (!res.ok || res.redirected) return;
       const live = await res.json();
       // An older number means version.json itself is behind (a slow cache), not us.
       if (String(live.build) === BUILD_NUMBER || Number(live.build) < Number(BUILD_NUMBER)) {
@@ -1826,6 +1827,76 @@
     navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(() => {});
   }
 
+  // ---------- moving to the new address ----------
+  // The app moved from tweetingbirds.com/now-and-then/ to its own subdomain. Browsers
+  // keep localStorage per origin, so lists don't follow on their own. At the old
+  // address the app offers to carry this device's storage over in the link's #move=
+  // (gzipped, after the #, so it never reaches a server). The new address writes it
+  // into its own storage. sw.js keeps the old address working from its cache after
+  // GitHub starts redirecting it, so devices that haven't moved yet can still move.
+  const NEW_ORIGIN = "https://now-and-then.tweetingbirds.com";
+  const MOVE_KEYS = [BOARD_KEY, LOCAL_KEY, SYNCED_KEY];
+  const atOldAddress = location.origin !== NEW_ORIGIN &&
+    /^(www\.)?tweetingbirds\.(com|github\.io)$/.test(location.hostname) && location.pathname.startsWith("/now-and-then");
+  const b64url = (bytes) => { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
+  const unb64url = (str) => Uint8Array.from(atob(str.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+  const pipe = async (bytes, stream) => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
+  async function movePayload() {
+    const keys = {};
+    for (const k of MOVE_KEYS) { const v = localStorage.getItem(k); if (v != null) keys[k] = v; }
+    const bytes = new TextEncoder().encode(JSON.stringify({ v: 1, keys }));
+    if (typeof CompressionStream === "function") return "z." + b64url(await pipe(bytes, new CompressionStream("gzip")));
+    return "j." + b64url(bytes);
+  }
+  async function readMovePayload(str) {
+    const [kind, body] = [str.slice(0, 2), str.slice(2)];
+    let bytes = unb64url(body);
+    if (kind === "z.") bytes = await pipe(bytes, new DecompressionStream("gzip"));
+    else if (kind !== "j.") throw new Error("unknown move format");
+    const data = JSON.parse(new TextDecoder().decode(bytes));
+    if (!data || data.v !== 1 || !data.keys || !data.keys[BOARD_KEY]) throw new Error("nothing to move");
+    JSON.parse(data.keys[BOARD_KEY]); // must be a real board
+    return data.keys;
+  }
+  const moveDlg = document.getElementById("moveDlg");
+  const moveHost = NEW_ORIGIN.replace("https://", "");
+  async function offerMove() {
+    if (!atOldAddress || !moveDlg) return;
+    try { const res = await fetch(NEW_ORIGIN + "/version.json", { cache: "no-store" }); if (!res.ok) return; } catch { return; }
+    document.getElementById("moveTitle").textContent = local.movedAt ? "Now and Then has moved" : "Now and Then has a new address";
+    document.getElementById("moveWhat").textContent = (local.movedAt
+      ? `You already moved this device's lists to ${moveHost}. Use the app there from now on.`
+      : `Now and Then now lives at ${moveHost}. Tap Move to open it there with the lists on this device` + (syncConfigured() ? " and your sync already set up." : "."))
+      + (matchMedia("(display-mode: standalone)").matches ? " If you added the app to your Home Screen, add the new address too, and remove this one once your lists show up there." : "");
+    document.getElementById("moveGo").textContent = local.movedAt ? "Open new address" : "Move";
+    document.getElementById("moveMsg").textContent = "";
+    if (!dlg.open && !joinDlg.open) moveDlg.showModal();
+  }
+  moveDlg?.querySelector("#moveGo").addEventListener("click", async () => {
+    const msg = document.getElementById("moveMsg");
+    try {
+      const payload = await movePayload();
+      local.movedAt = new Date().toISOString(); write(LOCAL_KEY, local);
+      location.href = NEW_ORIGIN + "/#move=" + payload;
+    } catch (e) { msg.className = "msg bad"; msg.textContent = "Couldn't pack up your lists. Download a backup in Settings and restore it at " + moveHost + "."; }
+  });
+  // At the new address: #move=<payload> brings in the old address's storage.
+  async function readMove() {
+    const p = new URLSearchParams(location.hash.slice(1)), str = p.get("move");
+    if (!str) return false;
+    history.replaceState(null, "", location.pathname + location.search);
+    let keys;
+    try { keys = await readMovePayload(str); } catch (e) { toast("That move link didn't come through whole. Download a backup at the old address and restore it here.", 7000); return true; }
+    const theirs = JSON.parse(keys[LOCAL_KEY] || "{}");
+    if (theirs.syncToken && theirs.syncToken === local.syncToken && theirs.syncUrl === local.syncUrl) { toast("Your lists are already here.", 4000); return true; }
+    if (!local.pristine && !confirm("Replace the lists on this device with the ones from the old address? The lists here now will be lost unless they're synced.")) return true;
+    for (const [k, v] of Object.entries(keys)) localStorage.setItem(k, v);
+    const moved = Object.assign(read(LOCAL_KEY) || {}, { movedAt: null, movedIn: new Date().toISOString() });
+    write(LOCAL_KEY, moved);
+    location.reload();
+    return true;
+  }
+
   // ---------- boot ----------
   applyTheme();
   repairOrphans();
@@ -1835,8 +1906,8 @@
   render();
   sync();
   checkForUpdate();
-  readLink();
+  readMove().then((moving) => { if (!moving) { readLink(); offerMove(); } });
 
   // exposed for tests
-  window.__nat = { mergeBoards, restoreBoard, readBackup, boardCsv, backupJson, get board() { return board; } };
+  window.__nat = { mergeBoards, restoreBoard, readBackup, boardCsv, backupJson, movePayload, get board() { return board; } };
 })();

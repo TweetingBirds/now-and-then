@@ -63,7 +63,7 @@ Paste the token when it asks. Each `TOKEN_<NAME>` secret is one board. Every tok
 
 ## 6. Connect the app
 
-Open [Now and Then](https://tweetingbirds.com/now-and-then/), tap **Settings**, and under **Sync with Cloudflare** paste your Worker's address and your token. Tap **Save and sync**.
+Open [Now and Then](https://now-and-then.tweetingbirds.com/), tap **Settings**, and under **Sync with Cloudflare** paste your Worker's address and your token. Tap **Save and sync**.
 
 To add your other devices, tap **Copy link for another device** in Settings and open that link on each one.
 
