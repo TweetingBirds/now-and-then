@@ -1766,6 +1766,10 @@
   // version.json is written at deploy time. If the live build differs from the
   // one running here, offer a reload so the page shows what's actually deployed.
   let liveBuild = null;
+  // Remembers which build Reload was pressed for, so a reload that still comes
+  // up on the old build doesn't throw the same "new version" toast again.
+  const RELOAD_KEY = "nat.reloadFor";
+  const reloadedFor = () => { try { return sessionStorage.getItem(RELOAD_KEY); } catch { return null; } };
   async function checkForUpdate() {
     if (!STAMPED || !navigator.onLine) return;
     const msg = document.getElementById("updateMsg"), btn = document.getElementById("reloadApp");
@@ -1773,10 +1777,19 @@
       const res = await fetch("version.json", { cache: "no-store" });
       if (!res.ok) return;
       const live = await res.json();
-      if (String(live.build) === BUILD_NUMBER) { msg.textContent = "This is the latest version."; btn.hidden = true; return; }
+      // An older number means version.json itself is behind (a slow cache), not us.
+      if (String(live.build) === BUILD_NUMBER || Number(live.build) < Number(BUILD_NUMBER)) {
+        try { sessionStorage.removeItem(RELOAD_KEY); } catch {}
+        msg.textContent = "This is the latest version."; btn.hidden = true; return;
+      }
       const fresh = liveBuild !== live.build;
       liveBuild = live.build;
-      msg.textContent = `Build ${live.build} is available.`; btn.hidden = false;
+      btn.hidden = false; btn.disabled = false;
+      if (reloadedFor() === String(live.build)) {
+        msg.textContent = `Build ${live.build} is out, but this device is still on the old files. Try Reload again in a few minutes.`;
+        return;
+      }
+      msg.textContent = `Build ${live.build} is available.`;
       if (fresh && !dlg.open) toast(`A new version is ready. Open Settings to reload.`);
     } catch { /* offline or blocked: keep what we show */ }
   }
@@ -1785,8 +1798,26 @@
   document.getElementById("whatsNewLink").addEventListener("click", () => { local.seenVersion = APP_VERSION; write(LOCAL_KEY, local); showWhatsNew(); });
   showWhatsNew();
 
-  document.getElementById("reloadApp").addEventListener("click", async () => {
-    try { const reg = await navigator.serviceWorker?.getRegistration(); await reg?.update(); } catch {}
+  // Reloading while the new service worker is still installing let the new page
+  // load the old app.js, so it showed the same "new version" toast again. Wait
+  // for the new worker to take over first (at most 10 seconds), then reload.
+  document.getElementById("reloadApp").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    document.getElementById("updateMsg").textContent = "Updating…";
+    try { if (liveBuild) sessionStorage.setItem(RELOAD_KEY, String(liveBuild)); } catch {}
+    try {
+      const reg = await navigator.serviceWorker?.getRegistration();
+      if (reg) {
+        await reg.update();
+        const sw = reg.installing || reg.waiting;
+        if (sw) await new Promise((done) => {
+          setTimeout(done, 10000);
+          navigator.serviceWorker.addEventListener("controllerchange", done, { once: true });
+          sw.addEventListener("statechange", () => { if (sw.state === "activated" || sw.state === "redundant") done(); });
+        });
+      }
+    } catch {}
     location.reload();
   });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkForUpdate(); });
