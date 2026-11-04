@@ -362,10 +362,13 @@
     row.append(
       el("button", { class: "grip", "aria-label": "Drag to move", title: "Drag to move", onpointerdown: e => startDrag(e, t, row) }, "⋮⋮"),
       el("input", { type: "checkbox", class: "check", checked: t.done, "aria-label": "Done", onchange: e => {
-        touch(t, { done: e.target.checked, doneDay: e.target.checked ? todayKey() : null });
-        if (t.done && board.settings.doneNow) { archive(t); commit(); toast("Nice. Moved to Done."); return; }
-        commit();
-        if (t.done) toast("Nice. It moves to Done tomorrow morning.");
+        const checked = e.target.checked;
+        const undo = undoable([t], () => {
+          touch(t, { done: checked, doneDay: checked ? todayKey() : null });
+          if (checked && board.settings.doneNow) archive(t);
+          commit();
+        });
+        if (checked) toast(board.settings.doneNow ? "Nice. Moved to Done." : "Nice. It moves to Done tomorrow morning.", undo);
       } }),
       text,
       el("button", { class: "icon-btn more", "aria-label": "Todo options", "aria-expanded": "false", "data-pop-trigger": true, onclick: e => todoPop(e, t, row, text) }, "•••"),
@@ -410,11 +413,11 @@
   function todoPop(e, t, row, text) {
     popAt(row, e.currentTarget,
       el("div", { class: "lbl" }, "Move to"),
-      lists().filter(l => l.id !== t.listId).map(l => el("button", { class: "item", onclick: () => { moveTodo(t, l.id, null); toast(`Moved to ${l.name}`); } },
+      lists().filter(l => l.id !== t.listId).map(l => el("button", { class: "item", onclick: () => { toast(`Moved to ${l.name}`, undoable([t], () => moveTodo(t, l.id, null))); } },
         el("span", { class: "dot", style: `background:${l.color}` }), l.name)),
       el("div", { class: "lbl" }, "This todo"),
       el("button", { class: "item", onclick: () => { closePop(); editText(text, t); } }, "Edit text"),
-      el("button", { class: "item danger", onclick: () => { touch(t, { deleted: true }); commit(); toast("Deleted"); } }, "Delete"),
+      el("button", { class: "item danger", onclick: () => { toast("Deleted", undoable([t], () => { touch(t, { deleted: true }); commit(); })); } }, "Delete"),
     );
   }
 
@@ -449,10 +452,13 @@
     confirmBox.append(
       el("div", { class: "lbl" }, count ? `${count} todo${count > 1 ? "s" : ""} will move to ${fallback?.name}` : "This list is empty"),
       el("button", { class: "item danger", onclick: () => {
-        let o = Math.max(0, ...todosIn(fallback.id).map(t => t.order));
-        todosIn(list.id).forEach(t => touch(t, { listId: fallback.id, order: ++o }));
-        touch(list, { deleted: true });
-        commit(); toast(`Deleted ${list.name}`);
+        const undo = undoable([list, ...todosIn(list.id)], () => {
+          let o = Math.max(0, ...todosIn(fallback.id).map(t => t.order));
+          todosIn(list.id).forEach(t => touch(t, { listId: fallback.id, order: ++o }));
+          touch(list, { deleted: true });
+          commit();
+        });
+        toast(`Deleted ${list.name}`, undo);
       } }, "Yes, delete " + list.name),
     );
   }
@@ -497,8 +503,11 @@
   function restore(a) {
     const list = lists().find(l => l.name === a.fromName) || lists()[0];
     const order = Math.max(0, ...todosIn(list.id).map(t => t.order)) + 1;
-    touch(a, { archived: false, archivedDay: null, done: false, doneDay: null, listId: list.id, order });
-    commit(); toast(`Put back on ${list.name}`);
+    const undo = undoable([a], () => {
+      touch(a, { archived: false, archivedDay: null, done: false, doneDay: null, listId: list.id, order });
+      commit();
+    });
+    toast(`Put back on ${list.name}`, undo);
   }
 
   // ---------- moving & drag ----------
@@ -646,18 +655,60 @@
     if (!d.started) return;
     d.ghost.remove(); d.ph.remove();
     if (d.target && e.type !== "pointercancel") {
-      const from = d.t.listId;
-      moveTodo(d.t, d.target, d.before);
-      if (from !== d.target) toast(`Moved to ${listById(d.target).name}`);
+      if (d.t.listId === d.target) moveTodo(d.t, d.target, d.before);
+      else toast(`Moved to ${listById(d.target).name}`, undoable([d.t], () => moveTodo(d.t, d.target, d.before)));
     } else render();
   }
 
-  // ---------- toast ----------
-  let toastTimer;
-  function toast(msg) {
-    const t = document.getElementById("toast"); t.textContent = msg; t.hidden = false;
-    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2400);
+  // ---------- undo ----------
+  // An undoable action copies the lists and todos it is about to change, makes the
+  // change, and hands back what Undo needs. Undo puts the old fields back with a fresh
+  // updatedAt, so the restored version is the newest edit and wins the merge on the
+  // Worker and on other devices, like any other edit (a deleted todo comes back from
+  // its tombstone the same way). If an item has changed again since, here or on
+  // another device, Undo leaves that item alone rather than overwrite the newer edit.
+  function undoable(items, change) {
+    const before = items.map(o => ({ o, kind: board.lists.includes(o) ? "lists" : "todos", snap: JSON.parse(JSON.stringify(o)) }));
+    change();
+    return before.map(({ o, kind, snap }) => ({ kind, id: o.id, snap, at: o.updatedAt }));
   }
+  let undoEntries = null;
+  function undo() {
+    const entries = undoEntries;
+    if (!entries) return;
+    undoEntries = null;
+    let skipped = 0;
+    for (const { kind, id, snap, at } of entries) {
+      const o = board[kind].find(x => x.id === id);
+      if (!o || (o.updatedAt || 0) !== at) { skipped++; continue; }
+      for (const k of Object.keys(o)) if (!(k in snap)) delete o[k];
+      Object.assign(o, snap, { updatedAt: now() });
+    }
+    if (skipped < entries.length) { repairOrphans(); commit(); }
+    toast(!skipped ? "Undone" : skipped === entries.length ? "Couldn't undo. It was changed since then." : "Undone, except what was changed since then.");
+  }
+  // Cmd+Z / Ctrl+Z works while an Undo toast is showing, unless you're typing.
+  document.addEventListener("keydown", e => {
+    if (!undoEntries || e.key.toLowerCase() !== "z" || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+    if (isBusyEditing() || dlg.open) return;
+    e.preventDefault(); undo();
+  });
+
+  // ---------- toast ----------
+  // Toasts with an Undo button stay up longer, and don't hide while a finger or mouse is on them.
+  const toastEl = document.getElementById("toast");
+  let toastTimer;
+  function hideToast() { toastEl.hidden = true; undoEntries = null; }
+  function armToast() { clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, undoEntries ? 6000 : 2400); }
+  function toast(msg, undoInfo) {
+    undoEntries = undoInfo && undoInfo.length ? undoInfo : null;
+    toastEl.replaceChildren(el("span", {}, msg));
+    if (undoEntries) toastEl.append(el("button", { class: "toast-undo", type: "button", onclick: () => { clearTimeout(toastTimer); undo(); } }, "Undo"));
+    toastEl.hidden = false;
+    armToast();
+  }
+  toastEl.addEventListener("pointerenter", () => clearTimeout(toastTimer));
+  toastEl.addEventListener("pointerleave", () => { if (!toastEl.hidden) armToast(); });
 
   // ---------- settings ----------
   const dlg = document.getElementById("settings");
