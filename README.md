@@ -83,6 +83,16 @@ Opening the link shows **Join Now and Then sync**, with an optional name for the
 
 **Copy link for another device** makes `#connect=<token>&sync=<worker address>`. Opening it connects that device to the same board, the same way **Save and sync** does with a pasted token.
 
+## Shared lists
+
+Any list except Now and Tomorrow can be shared with people on other boards of the same Worker, while the rest of each board stays private. The list's ••• menu has **Share list…**, which calls `POST /shared {listId}`. The Worker moves that list and its todos out of the board into their own KV key, `shared:s_<random>`, and leaves a small placement record (`{sid, order}`) in the board's `shared` array. Then `POST /shared/<sid>/invites` makes a one-time link like `#share=<code>&sync=<worker address>` (14 days). Opening it on a device that syncs with the same Worker shows **Add a shared list**, which calls `POST /shared/join {code}`.
+
+`GET /data` returns the board with its shared lists mixed in. Each one carries `shared` (its id) and `members` (first names), and its `order` comes from that person's own placement. `PUT /data` splits the incoming board back apart by each todo's `listId`, so todos move freely between private and shared lists. When a todo moves out of a shared list, a tombstone stays in the shared list so the other members' devices drop it instead of sending it back. Name and color are shared; position on the board is per person. Checked todos go to Done on each board as usual.
+
+**Leave shared list…** calls `DELETE /shared/<sid>`. The board gets tombstones for the list and its todos (so the person's other devices remove it), and the list stays for everyone else. The last member out deletes it. Deleting a board, or an older app deleting the list, also counts as leaving. Limits: 10 people per list, shared lists count toward a board's 10 lists, and `MAX_SHARED` (default 100) caps how many exist on a Worker. The nightly copies of a board include its shared lists.
+
+A shared list is a self-contained record (list, todos, members) referenced from each member's board, which maps directly onto CloudKit's shared record zones if the app moves to iCloud.
+
 ### Deleting a board
 
 People who joined by invite see **Delete synced board…** in Settings. It calls `DELETE /data?confirm=delete`, which deletes `board:<id>`, every `snap:<id>:` copy and the token's `tok:` key, then leaves `gone:<hash>` (no other data) for 30 days. While that marker exists the token gets **410 Gone**, and the person's other devices turn sync off and say the board was deleted, instead of uploading it again. The app can also erase the lists on the device doing the delete.
@@ -99,6 +109,10 @@ Owner boards (`TOKEN_*`) can't delete themselves, because the secret would keep 
 | `POST /join` `{code, name}` | none | Turn an invite into a board and token. |
 | `POST /invites` `{label, days}`, `GET /invites`, `DELETE /invites/<code>` | admin | Make, list and revoke invites. |
 | `GET /boards`, `DELETE /boards/<id>` | admin | List invited boards (name, note, date joined) and remove one. |
+| `POST /shared` `{listId}` | any | Share one of your lists. |
+| `POST /shared/<sid>/invites` | member | Make a one-time link to add a shared list. |
+| `POST /shared/join` `{code}` | any | Add a shared list to your board. |
+| `DELETE /shared/<sid>` | member | Leave a shared list (the last one out deletes it). |
 
 Every board response carries `X-Board` (the board id the app pins itself to), `X-Board-Name`, `X-Board-Kind` (`owner` or `invited`) and, for admins, `X-Board-Admin: 1`.
 
@@ -106,8 +120,8 @@ Every board response carries `X-Board` (the board id the app pins itself to), `X
 
 All of this stays inside Cloudflare's free plan, with nothing to maintain:
 
-- **KV writes (1,000 a day)** are the tight one. Each sync after an edit is one write, each board's nightly copy is one, and joining is one. Polling never writes.
-- **KV reads (100,000 a day).** The 20-second refresh reads the board, and an invited token's lookup is cached for a minute inside the Worker, so it costs about one read per refresh, like an owner token.
+- **KV writes (1,000 a day)** are the tight one. Each sync after an edit is one write, plus one for a shared list it changed. Each board's nightly copy is one, and joining is one. Polling never writes.
+- **KV reads (100,000 a day).** The 20-second refresh reads the board plus one read per shared list on it, and an invited token's lookup is cached for a minute inside the Worker, so it costs about one read per refresh, like an owner token.
 - **KV deletes and lists (1,000 a day each)** are only used by joining, deleting and the nightly backup.
 - `MAX_BOARDS` in `wrangler.toml` (50) caps invited boards so a forwarded invite can't run the account over. If a free limit is reached, Cloudflare refuses requests until the next day; it never bills a free account.
 

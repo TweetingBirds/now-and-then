@@ -6,7 +6,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.9.0";
+  const APP_VERSION = "1.10.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -487,18 +487,19 @@
   function renderList(list) {
     const todos = todosIn(list.id);
     const open = todos.filter(t => !t.done).length;
-    const col = el("section", { class: "col", "data-list": list.id, style: `--c:${list.color}` });
+    const col = el("section", { class: "col" + (list.shared ? " shared" : ""), "data-list": list.id, style: `--c:${list.color}` });
     const head = el("div", { class: "col-head" });
-    head.append(
+    head.append(...[
       el("button", { class: "swatch-btn", title: "Change color", "aria-label": `Change ${list.name} color`, "data-pop-trigger": true, onclick: e => colorPop(e, list, head) }),
       el("input", {
         class: "col-title", value: list.name, "aria-label": "List name", maxlength: 30, id: "name-" + list.id,
         onchange: e => { const v = e.target.value.trim(); if (v && v !== list.name) { touch(list, { name: v }); commit(); } else e.target.value = list.name; },
         onkeydown: e => { if (e.key === "Enter") e.target.blur(); },
       }),
+      list.shared ? el("button", { class: "shared-mark", type: "button", title: sharedWith(list), "aria-label": sharedWith(list), "data-pop-trigger": true, onclick: e => listPop(e, list, head) }, PEOPLE()) : null,
       el("span", { class: "count", title: "Unfinished" }, String(open)),
       el("button", { class: "icon-btn", title: "List options", "aria-label": `${list.name} options`, "data-pop-trigger": true, onclick: e => listPop(e, list, head) }, "•••"),
-    );
+    ].filter(Boolean));
     const body = el("div", { class: "col-body", "data-drop": list.id });
     if (!todos.length) body.append(el("div", { class: "empty" }, list.role === "later" ? "Someday things go here." : "Nothing here yet."));
     todos.forEach(t => body.append(renderTodo(t)));
@@ -598,14 +599,25 @@
   function listPop(e, list, head) {
     const count = todosIn(list.id).length;
     const ls = lists(), idx = ls.indexOf(list);
-    const fallback = ls.find(l => l.id !== list.id);
+    const fallback = ls.find(l => l.id !== list.id && !l.shared);
     const confirmBox = el("div", { hidden: true });
+    const leaveBox = el("div", { hidden: true });
+    const canShare = !list.shared && list.role !== "now" && list.role !== "tomorrow";
     popAt(head, e.currentTarget,
+      list.shared ? el("div", { class: "lbl shared-lbl" }, sharedWith(list)) : null,
       el("button", { class: "item", onclick: () => { closePop(); const i = document.getElementById("name-" + list.id); i.focus(); i.select(); } }, "Rename"),
       el("button", { class: "item", disabled: idx === 0, onclick: () => swapLists(list, ls[idx - 1]) }, "Move list left"),
       el("button", { class: "item", disabled: idx === ls.length - 1, onclick: () => swapLists(list, ls[idx + 1]) }, "Move list right"),
-      ls.length > 1 ? el("button", { class: "item danger", onclick: () => { confirmBox.hidden = false; } }, "Delete list…") : null,
-      confirmBox,
+      canShare ? el("button", { class: "item", onclick: () => { closePop(); shareList(list); } }, "Share list…") : null,
+      list.shared ? el("button", { class: "item", onclick: () => { closePop(); shareList(list); } }, "Invite someone…") : null,
+      list.shared ? el("button", { class: "item danger", onclick: () => { leaveBox.hidden = false; } }, "Leave shared list…") : null,
+      !list.shared && fallback ? el("button", { class: "item danger", onclick: () => { confirmBox.hidden = false; } }, "Delete list…") : null,
+      confirmBox, leaveBox,
+    );
+    const others = (list.members || []).length - 1;
+    leaveBox.append(
+      el("div", { class: "lbl" }, others > 0 ? `It comes off your board and stays on ${others === 1 ? "the other person's" : `${others} other boards`}.` : "You're the only one on it, so it will be deleted."),
+      el("button", { class: "item danger", onclick: () => { closePop(); leaveList(list); } }, "Yes, leave " + list.name),
     );
     confirmBox.append(
       el("div", { class: "lbl" }, count ? `${count} todo${count > 1 ? "s" : ""} will move to ${fallback?.name}` : "This list is empty"),
@@ -634,6 +646,83 @@
     board.lists.push(list); commit();
     const i = document.getElementById("name-" + list.id);
     i.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" }); i.focus(); i.select();
+  }
+
+  // ---------- shared lists ----------
+  // A shared list lives on its own on the Worker and shows up on the board of
+  // everyone on it (see "Shared lists" in worker/worker.js). The Worker marks it
+  // with list.shared (its id) and list.members (first names). Name, color and
+  // todos are shared; where it sits on the board is each person's own.
+  const PEOPLE = () => {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("width", "16"); svg.setAttribute("height", "16"); svg.setAttribute("aria-hidden", "true");
+    svg.innerHTML = '<circle cx="9" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 19c.6-3.2 3-5 6-5s5.4 1.8 6 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M15.5 5.3a3 3 0 0 1 0 5.4M17.5 14.3c1.8.7 3 2.3 3.5 4.7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
+    return svg;
+  };
+  function sharedWith(list) {
+    const me = boardName();
+    const others = (list.members || []).filter((n, i, a) => !(n === me && a.indexOf(n) === i));
+    if (!others.length) return "Shared · just you for now";
+    const names = others.length <= 3 ? others.join(", ").replace(/, ([^,]*)$/, " and $1") : `${others.slice(0, 2).join(", ")} and ${others.length - 2} more`;
+    return "Shared with " + names;
+  }
+  async function sharedFetch(path, opts = {}) {
+    const res = await fetch(workerBase() + "/shared" + path, Object.assign({ cache: "no-store" }, opts, {
+      headers: { "Authorization": "Bearer " + local.syncToken, "Content-Type": "application/json" },
+    }));
+    if (res.status === 401) throw new Error("The access token was not accepted.");
+    if (res.status === 410) throw boardGone();
+    let body = {};
+    try { body = await res.json(); } catch (e) {}
+    if (!res.ok) { const err = new Error(body.error || "The Worker answered " + res.status + "."); err.status = res.status; err.code = body.error; throw err; }
+    return body;
+  }
+  const canUseShared = () => syncConfigured() && local.synced && !local.otherBoard;
+
+  // Makes the list shared if it isn't yet, then a one-time link for someone else.
+  async function shareList(list) {
+    if (!canUseShared()) {
+      openSettingsTo("sync");
+      toast("Sharing a list needs sync. Turn it on here first.", 5000);
+      return;
+    }
+    if (!navigator.onLine) { toast("You're offline. Sharing needs a connection.", 4000); return; }
+    toast(list.shared ? "Making a link…" : `Sharing ${list.name}…`, 8000);
+    try {
+      let sid = list.shared;
+      if (!sid) {
+        // The Worker moves the list as it has it, so send any edits here first.
+        const first = await sync();
+        if (first !== true) throw new Error(first);
+        sid = (await sharedFetch("", { method: "POST", body: JSON.stringify({ listId: list.id }) })).sid;
+        await sync();
+      }
+      const inv = await sharedFetch("/" + encodeURIComponent(sid) + "/invites", { method: "POST" });
+      const name = (listById(list.id) || list).name;
+      const how = await shareLink(appLink({ share: inv.code, sync: workerBase() }), `Join my ${name} list`);
+      const until = shortDate(inv.expires);
+      if (how === "copied") toast(`Link copied. Send it to the person you're sharing ${name} with. It works once, until ${until}.`, 7000);
+      else if (how === "shared") toast(`Link sent. It works once, until ${until}.`, 5000);
+      else hideToast();
+    } catch (e) {
+      const msg = e.code === "full" ? "This sync service has as many shared lists as it allows." :
+        e.code === "can't share this list" ? "Now and Tomorrow can't be shared, because each morning moves todos between them. Make a new list to share." :
+        e instanceof TypeError ? "Couldn't reach the sync service." : e.message;
+      toast("Couldn't share: " + msg, 7000);
+    }
+  }
+
+  async function leaveList(list) {
+    const name = list.name; // the list object is a tombstone after the sync below
+    if (!navigator.onLine) { toast("You're offline. Leaving a shared list needs a connection.", 4000); return; }
+    try {
+      const res = await sharedFetch("/" + encodeURIComponent(list.shared), { method: "DELETE" });
+      await sync();
+      toast(res.deleted ? `Left ${name}. You were the last one on it, so it's deleted.` : `Left ${name}. It's still on the others' boards.`, 5000);
+    } catch (e) {
+      if (e.status === 404) { await sync(); return; }
+      toast("Couldn't leave: " + (e instanceof TypeError ? "the sync service can't be reached." : e.message), 6000);
+    }
   }
 
   // ---------- Done archive: search, filter, put back ----------
@@ -1169,21 +1258,23 @@
     showSyncMore(); showStatus(); render();
   });
 
-  // ---- opening an invite or device link ----
+  // ---- opening an invite, device or shared list link ----
   // #join=<code>&sync=<worker> makes a new board on that Worker (POST /join).
   // #connect=<token>&sync=<worker> connects this device to an existing board.
-  // Both live after the #, so the code or token never reaches the web server.
+  // #share=<code>&sync=<worker> adds someone's shared list to this board (POST /shared/join).
+  // All live after the #, so the code or token never reaches the web server.
   const joinDlg = document.getElementById("joinDlg");
   let pendingLink = null;
   function readLink() {
     const p = new URLSearchParams(location.hash.slice(1));
-    const sync = (p.get("sync") || "").trim(), join = p.get("join"), connect = p.get("connect");
-    if (!(join || connect)) return;
+    const sync = (p.get("sync") || "").trim(), join = p.get("join"), connect = p.get("connect"), share = p.get("share");
+    if (!(join || connect || share)) return;
     history.replaceState(null, "", location.pathname + location.search);
     let host = "";
     try { const u = new URL(sync); if (u.protocol === "https:") host = u.host; } catch (e) {}
     if (!host) { toast("That link is missing its sync address.", 5000); return; }
-    pendingLink = { sync: sync.replace(/\/+$/, ""), join, connect };
+    pendingLink = { sync: sync.replace(/\/+$/, ""), join, connect, share };
+    if (share) { showShareLink(host); return; }
     const had = syncConfigured() && local.synced;
     const what = join
       ? "You've been invited to sync Now and Then. Joining makes a board of your own, so your lists are saved and show up on your other devices."
@@ -1199,11 +1290,51 @@
     document.getElementById("joinHost").textContent = `Sync runs through ${host}.`;
     document.getElementById("joinGo").textContent = join ? "Join" : "Connect";
     document.getElementById("joinGo").disabled = false;
+    document.getElementById("joinGo").hidden = false;
     document.getElementById("joinMsg").textContent = "";
     joinDlg.showModal();
   }
+  // A shared list goes onto the board this device already syncs with, so it needs
+  // sync turned on with the same Worker first.
+  function showShareLink(host) {
+    const same = canUseShared() && workerBase() === pendingLink.sync;
+    document.getElementById("joinTitle").textContent = "Add a shared list";
+    document.getElementById("joinWhat").textContent = same
+      ? `Someone shared a list with you. It goes onto ${boardLabel(local.board)}, and changes either of you make show up for both. The rest of your board stays private.`
+      : syncConfigured() && local.synced
+        ? `Someone shared a list with you, but it's on a different sync service (${host}) from the one this device uses. Ask them to share it from the same one.`
+        : "Someone shared a list with you. To add it, this device needs to sync first, because the list lives on the sync service. Ask the person who sent this for an invite link, or turn on sync in Settings, then open this link again.";
+    document.getElementById("joinNameRow").hidden = true;
+    document.getElementById("joinHost").textContent = `Sync runs through ${host}.`;
+    document.getElementById("joinGo").textContent = "Add list";
+    document.getElementById("joinGo").disabled = !same;
+    document.getElementById("joinGo").hidden = !same;
+    document.getElementById("joinMsg").textContent = "";
+    joinDlg.showModal();
+  }
+  async function addSharedList(link, msg, go) {
+    msg.className = "msg"; msg.textContent = "Adding…"; go.disabled = true;
+    try {
+      const res = await sharedFetch("/join", { method: "POST", body: JSON.stringify({ code: link.share }) });
+      const result = await sync();
+      if (result !== true) throw new Error(result);
+      pendingLink = null;
+      msg.textContent = res.already ? `${res.name} is already on your board.` : `Added ${res.name}${res.by ? `, shared by ${res.by}` : ""}.`;
+      render();
+      const l = board.lists.find(x => x.shared === res.sid);
+      setTimeout(() => { joinDlg.close(); if (l) document.getElementById("name-" + l.id)?.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" }); }, 1200);
+    } catch (e) {
+      go.disabled = false;
+      msg.className = "msg bad";
+      msg.textContent = e instanceof TypeError ? "Couldn't reach the sync service. Check the connection and try again." :
+        e.code === "invite not found" ? "This link has already been used or has expired. Ask for a new one." :
+        e.code === "too many lists" ? `Your board already has ${MAX_LISTS} lists. Delete one to make room, then open the link again.` :
+        e.code === "list full" ? "This list already has as many people as it can." : e.message;
+    }
+  }
   document.getElementById("joinGo").addEventListener("click", async () => {
     const link = pendingLink; if (!link) return;
+    if (link.share) return addSharedList(link, document.getElementById("joinMsg"), document.getElementById("joinGo"));
     const msg = document.getElementById("joinMsg"), go = document.getElementById("joinGo");
     msg.className = "msg"; msg.textContent = link.join ? "Joining…" : "Connecting…"; go.disabled = true;
     try {
@@ -1484,7 +1615,9 @@
     };
     put(bk.lists, board.lists);
     put(bk.todos, board.todos);
-    if (replace) for (const x of [...board.lists, ...board.todos]) if (!x.deleted && !keep.has(x.id)) touch(x, { deleted: true });
+    // Shared lists aren't only yours, so "replace" leaves them (and their todos) alone.
+    const isShared = (x) => x.shared || (x.listId && listById(x.listId)?.shared);
+    if (replace) for (const x of [...board.lists, ...board.todos]) if (!x.deleted && !keep.has(x.id) && !isShared(x)) touch(x, { deleted: true });
     if (bk.settings) board.settings = Object.assign({}, board.settings, bk.settings, { updatedAt: t });
     repairOrphans();
     sweepDone();

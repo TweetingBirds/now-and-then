@@ -16,6 +16,8 @@ crons = ["0 9 * * *"]
 # ADMINS: owner names (TOKEN_<NAME>, lowercased) who may create invites in the app.
 # MAX_BOARDS: the most invited boards this Worker will hold, to stay well inside
 # Workers KV's free tier. Raise it if you need more (see "Costs and limits" in the README).
+# MAX_SHARED: the most shared lists this Worker will hold (see "Shared lists" in the README).
 [vars]
 ADMINS = "nate"
 MAX_BOARDS = "50"
+MAX_SHARED = "100"

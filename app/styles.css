@@ -96,6 +96,13 @@ header.top {
 .col-title:hover { border-color: color-mix(in oklab, var(--c) 50%, var(--line)); }
 .col-title:focus { background: var(--surface); border-color: color-mix(in oklab, var(--c) 65%, var(--ink)); outline: none; }
 .count { font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* Shared lists: a small people mark by the count; tapping it opens the list menu. */
+.shared-mark {
+  display: inline-flex; align-items: center; border: none; border-radius: 6px; padding: 3px 4px;
+  background: color-mix(in oklab, var(--c) 30%, transparent); color: color-mix(in oklab, var(--c) 35%, var(--ink));
+}
+.shared-mark:hover { background: color-mix(in oklab, var(--c) 45%, transparent); }
+.pop .lbl.shared-lbl { text-transform: none; letter-spacing: 0; font-size: .8rem; max-width: 240px; }
 .icon-btn { border: none; background: transparent; border-radius: 6px; padding: 4px 6px; color: var(--muted); line-height: 1; }
 .icon-btn:hover { background: color-mix(in oklab, var(--ink) 8%, transparent); color: var(--ink); }
 
