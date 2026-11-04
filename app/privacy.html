@@ -32,7 +32,7 @@
   </header>
   <main class="page-main">
     <h1>Privacy</h1>
-    <p class="updated">Effective November 2, 2026</p>
+    <p class="updated">Effective November 4, 2026</p>
 
     <p>Now and Then is a todo list made by Tweeting Birds LLC (“we”). Your todos are yours. The app has no accounts, no ads, no analytics and no tracking, and your lists are never sold or shared for marketing. This page explains exactly where your lists are kept and who can see them.</p>
 
@@ -51,6 +51,7 @@
       <li>Your todos: their text, which list they're in, whether they're done, and when they were added, changed and finished.</li>
       <li>Board settings, such as whether unfinished Tomorrow todos move into Now each morning.</li>
       <li>Settings for each device: light or dark appearance, whether drag buzzes are on, and the sync address and access token if you set up sync.</li>
+      <li>If you join sync with an invite link, the name you give your board, if any.</li>
     </ul>
     <p>It doesn't ask for your name, email address, location, contacts or anything else about you. It doesn't use cookies.</p>
 
@@ -69,11 +70,12 @@
       your lists on this device only.</p>
     -->
     <h2 id="sync">Sync</h2>
-    <p>Sync is optional and off until you enter a sync address and access token in Settings. When it's on:</p>
+    <p>Sync is optional and off until you open an invite link or enter a sync address and access token in Settings. When it's on:</p>
     <ul>
       <li>The app sends your board (the lists, todos and board settings above) to the sync service after each change, and checks it for changes from your other devices about every 20 seconds while the app is on screen.</li>
       <li>The sync service is a small program running on Cloudflare Workers, which saves your board in Cloudflare Workers KV. Everything sent to and from it is encrypted in transit with HTTPS.</li>
       <li>Your access token decides which board you get. Each token opens one board, and only that board and its backups.</li>
+      <li>When you join with an invite link, the sync service makes a new board and a new access token for you. It stores your board's name (if you gave one), when you joined, and the short note the person who invited you wrote to remember who the invite was for. It stores only a scrambled fingerprint (a SHA-256 hash) of your token, never the token itself. Unused invites expire after at most 30 days.</li>
       <li>The sync service doesn't keep a log of your requests and doesn't store anything except your board and its backups.</li>
     </ul>
     <p>The sync service is run by Tweeting Birds LLC using a Cloudflare account it controls. Your board is not end-to-end encrypted, so Tweeting Birds LLC could technically read it. We don't look at your lists except to help when you ask, for example to recover something you lost. If you run your own sync service, your board is stored in your own Cloudflare account instead.</p>
@@ -98,7 +100,7 @@
     <ul>
       <li><strong>See your data.</strong> <strong>Download backup</strong> in Settings saves everything the app has for your board.</li>
       <li><strong>Stop syncing.</strong> Clear the sync address and token in Settings. Your lists stay on the device, and nothing more is sent.</li>
-      <li><strong>Delete your synced board.</strong> Email <a href="mailto:hello@tweetingbirds.com">hello@tweetingbirds.com</a> and your board and its backups will be removed from the sync service, usually within a few days. If you run your own sync service, delete the keys for your board in your Cloudflare dashboard.</li>
+      <li><strong>Delete your synced board.</strong> If you joined with an invite, tap <strong>Delete synced board…</strong> in Settings. Your board, all of its backups and its access token are removed from the sync service right away. For 30 days afterward the service keeps only the token's fingerprint, with nothing else attached, so your other devices are told the board was deleted and turn sync off instead of sending your lists back. If your board was set up by hand, or you can't reach the app, email <a href="mailto:hello@tweetingbirds.com">hello@tweetingbirds.com</a> and it will be removed, usually within a few days. If you run your own sync service, delete it from the app the same way, or delete the keys for your board in your Cloudflare dashboard.</li>
       <li><strong>Delete everything on a device.</strong> Clear the website data for this site, or delete the app from your Home Screen.</li>
     </ul>
 

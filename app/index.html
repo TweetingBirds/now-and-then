@@ -65,7 +65,7 @@
       </div>
 
       <h3>Sync with Cloudflare</h3>
-      <p>Paste the address of your Now and Then Worker and its access token. The README explains how to set them up. Leave both empty to keep your lists on this device only.</p>
+      <p>Open an invite link to start syncing, or paste the address of your Now and Then Worker and its access token. <a href="support.html#sync">How sync works</a>. Leave both empty to keep your lists on this device only.</p>
       <label class="field">Worker address
         <input type="url" id="syncUrl" placeholder="https://now-and-then-sync.yourname.workers.dev" autocomplete="off" spellcheck="false">
       </label>
@@ -73,6 +73,34 @@
         <input type="password" id="syncToken" autocomplete="off" spellcheck="false">
       </label>
       <div class="msg" id="syncMsg" role="status"></div>
+      <div class="sync-more" id="syncMore" hidden>
+        <div class="row start">
+          <button class="btn" type="button" id="deviceLink">Copy link for another device</button>
+        </div>
+        <p class="note" id="deviceNote">The link connects another phone, tablet or computer to this board. Anyone who has it can open your lists, so send it only to yourself or to someone you share the board with.</p>
+        <div class="row start">
+          <button class="btn danger" type="button" id="deleteBoard" hidden>Delete synced board…</button>
+        </div>
+      </div>
+      <div class="restore-box" id="deleteBox" hidden>
+        <p id="deleteWhat">This permanently deletes your board, its nightly copies and its access token from the sync service. Your other devices stop syncing. It can't be undone.</p>
+        <label class="toggle"><input type="checkbox" id="deleteLocal"> Also erase the lists on this device</label>
+        <div class="row">
+          <button class="btn" type="button" id="deleteCancel">Cancel</button>
+          <button class="btn primary danger" type="button" id="deleteGo">Delete board</button>
+        </div>
+      </div>
+
+      <div class="invites" id="invites" hidden>
+        <h3>Invite people</h3>
+        <p>An invite link gives someone their own board on this Worker. It works once and expires after 14 days. The note is only for you, to remember who it's for.</p>
+        <div class="row start invite-new">
+          <input type="text" id="inviteLabel" placeholder="Who it's for (optional)" maxlength="40" autocomplete="off" aria-label="Who the invite is for">
+          <button class="btn" type="button" id="inviteMake">Create invite link</button>
+        </div>
+        <ul class="invite-list" id="inviteList"></ul>
+        <div class="msg" id="inviteMsg" role="status"></div>
+      </div>
 
       <h3>Backups</h3>
       <p>Save a copy of all your lists, including Done, to this device. Keep the backup file to restore it later. The CSV file opens in Numbers or Excel.</p>
@@ -117,6 +145,29 @@
         <button class="btn" value="cancel" formnovalidate>Close</button>
         <button class="btn primary" type="button" id="saveSync">Save and sync</button>
       </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="settings join" id="joinDlg" aria-labelledby="joinTitle">
+    <form method="dialog">
+      <div class="settings-head">
+        <h2 id="joinTitle">Start syncing</h2>
+        <button class="close-x" value="cancel" formnovalidate aria-label="Close" title="Close">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>
+        </button>
+      </div>
+      <div class="settings-body">
+        <p id="joinWhat"></p>
+        <label class="field" id="joinNameRow">Name for your board (optional)
+          <input type="text" id="joinName" maxlength="40" autocomplete="given-name" placeholder="For example, Sam">
+        </label>
+        <p class="note" id="joinHost"></p>
+        <div class="msg" id="joinMsg" role="status"></div>
+        <div class="row">
+          <button class="btn" value="cancel" formnovalidate>Not now</button>
+          <button class="btn primary" type="button" id="joinGo">Join</button>
+        </div>
       </div>
     </form>
   </dialog>

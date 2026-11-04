@@ -122,11 +122,35 @@
 
       <h3>Sync and backups</h3>
 
-      <details>
+      <details id="sync">
         <summary>How do I use the same lists on my phone and computer?</summary>
         <div>
-          <p>Sync is optional. Without it, your lists stay on the device you're using. To sync, you need a sync address and an access token from whoever runs your sync service. Open Settings on each device, paste both under <strong>Sync with Cloudflare</strong>, and tap <strong>Save and sync</strong>. The first sync on a new device loads your saved board.</p>
-          <p>Two people can share one board by using the same token. To keep boards separate, each person uses their own token.</p>
+          <p>Sync is optional. Without it, your lists stay on the device you're using. The easiest way to start is an <strong>invite link</strong> from whoever runs the sync service. Open it on your phone, pick a name for your board if you like, and tap <strong>Join</strong>. You get a board of your own, and the lists already on that device go onto it.</p>
+          <p>To add another device, open Settings on the one that already syncs and tap <strong>Copy link for another device</strong>. Send the link to yourself (AirDrop, Messages to yourself or a note) and open it on the new device.</p>
+          <p>You can also paste a sync address and access token under <strong>Sync with Cloudflare</strong> in Settings and tap <strong>Save and sync</strong>. The first sync on a new device loads your saved board.</p>
+          <p>Two people can share one board by both using the same link for another device. To keep boards separate, each person joins with their own invite.</p>
+        </div>
+      </details>
+
+      <details id="invite">
+        <summary>My invite link doesn't work.</summary>
+        <div>
+          <p>Each invite link works once and expires after 14 days. If it has been used already (maybe on another device) or has expired, ask the person who sent it for a new one. If you already joined, use <strong>Copy link for another device</strong> on the device that syncs instead of the invite.</p>
+        </div>
+      </details>
+
+      <details id="delete">
+        <summary>How do I delete my synced data?</summary>
+        <div>
+          <p>If you joined with an invite link, open Settings and tap <strong>Delete synced board…</strong> under <strong>Sync with Cloudflare</strong>. This permanently removes your board, its nightly copies and its access token from the sync service, right away. Your other devices stop syncing and keep the lists they show, unless you also tick <strong>Also erase the lists on this device</strong>. Download a backup first if you might want your lists later.</p>
+          <p>If your board was set up by hand with a token from the Worker's owner, the button isn't shown. Email <a href="mailto:hello@tweetingbirds.com">hello@tweetingbirds.com</a> and it will be removed.</p>
+        </div>
+      </details>
+
+      <details id="own-worker">
+        <summary>Can I keep my lists on my own Cloudflare account?</summary>
+        <div>
+          <p>Yes. The sync service is a small Cloudflare Worker that runs on Cloudflare's free plan. The <a href="https://github.com/TweetingBirds/now-and-then/blob/main/docs/self-hosting.md">guide to running your own sync Worker</a> walks through it in about fifteen minutes. Then put your Worker's address and token in Settings, or invite your family from it.</p>
         </div>
       </details>
 
@@ -138,7 +162,7 @@
             <li><strong>Synced</strong>: everything is saved, with the name of the board you're syncing with.</li>
             <li><strong>Syncing…</strong>: changes are on their way.</li>
             <li><strong>Offline</strong>: there's no connection right now. Keep going; your changes are saved on this device and sync when you're back online. A small amber ring marks todos that haven't synced yet.</li>
-            <li><strong>Sync problem</strong>: the sync service refused, often because the token is wrong. Tap the badge for details, or check the token in Settings.</li>
+            <li><strong>Sync problem</strong>: the sync service refused, often because the token is wrong. Tap the badge for details, or check the token in Settings. If your board was deleted from another device, sync turns off and the badge goes back to <strong>On this device</strong>.</li>
           </ul>
         </div>
       </details>
@@ -162,7 +186,7 @@
         <summary>How do I erase everything?</summary>
         <div>
           <p>Your lists live in your browser's storage for this site. To erase them from a device, clear the website data for this site in your browser settings, or delete the Home Screen app. On iPhone, go to Settings → Apps → Safari → Advanced → Website Data.</p>
-          <p>If you use sync, your board is also stored by the sync service. See <a href="privacy.html#delete">Privacy</a> for how to have it removed.</p>
+          <p>If you use sync, your board is also stored by the sync service. See <a href="#delete">How do I delete my synced data?</a></p>
         </div>
       </details>
 
