@@ -278,12 +278,12 @@
   // and on a desktop it can stay focused for hours, so it doesn't hold off a pull.
   function busyForPull() {
     const a = document.activeElement;
-    if (!drag && a && a.id && a.id.startsWith("add-") && !a.value) return false;
+    if (!drag && a && a.id && (a.id.startsWith("add-") || a.id === "doneSearch") && !a.value) return false;
     return isBusyEditing();
   }
   function isBusyEditing() {
     const a = document.activeElement;
-    return drag || (a && (a.isContentEditable || (a.tagName === "INPUT" && a.type === "text") || a.classList?.contains("col-title")));
+    return drag || (a && (a.isContentEditable || (a.tagName === "INPUT" && (a.type === "text" || a.type === "search")) || a.classList?.contains("col-title")));
   }
 
   // ---------- rendering ----------
@@ -324,7 +324,7 @@
       full ? "List limit reached" : "+ New list", el("small", {}, `${ls.length} of ${MAX_LISTS}`)));
     boardEl.append(renderArchive());
     boardEl.scrollLeft = scroll;
-    if (focusedId && focusedId.startsWith("add-")) document.getElementById(focusedId)?.focus();
+    if (focusedId && (focusedId.startsWith("add-") || focusedId === "doneSearch")) document.getElementById(focusedId)?.focus();
   }
 
   function renderList(list) {
@@ -472,30 +472,112 @@
     i.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" }); i.focus(); i.select();
   }
 
+  // ---------- Done archive: search, filter, put back ----------
+  // The search and filter live outside render() so they survive re-renders and syncs.
+  const doneView = { q: "", range: "all", list: "" };
+  const RANGES = [["all", "All"], ["today", "Today"], ["week", "This week"], ["month", "This month"]];
+  const fold = s => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  function rangeStart(range) {
+    const d = dayDate();
+    if (range === "today") return keyOf(d);
+    if (range === "week") { d.setDate(d.getDate() - d.getDay()); return keyOf(d); } // weeks start on Sunday
+    if (range === "month") { d.setDate(1); return keyOf(d); }
+    return "";
+  }
+  function filteredArchive(items) {
+    const words = fold(doneView.q).split(/\s+/).filter(Boolean);
+    const since = rangeStart(doneView.range);
+    return items.filter(a =>
+      (!since || (a.archivedDay || "") >= since) &&
+      (!doneView.list || a.fromName === doneView.list) &&
+      words.every(w => fold(a.text).includes(w) || fold(a.fromName).includes(w)));
+  }
+  // Wraps each search word found in the text in <mark>, without touching innerHTML.
+  function highlight(text) {
+    const words = fold(doneView.q).split(/\s+/).filter(Boolean);
+    if (!words.length) return text;
+    const f = fold(text); // NFD folding can change length, so only highlight when it didn't
+    if (f.length !== text.length) return text;
+    const hits = [];
+    words.forEach(w => { for (let i = f.indexOf(w); i !== -1; i = f.indexOf(w, i + w.length)) hits.push([i, i + w.length]); });
+    hits.sort((a, b) => a[0] - b[0]);
+    const out = []; let at = 0;
+    for (const [s, e] of hits) {
+      if (e <= at) continue;
+      const from = Math.max(s, at);
+      if (from > at) out.push(text.slice(at, from));
+      out.push(el("mark", {}, text.slice(from, e))); at = e;
+    }
+    if (at < text.length) out.push(text.slice(at));
+    return out;
+  }
+  function restoreTarget(a) {
+    return listById(a.listId) || lists().find(l => l.name === a.fromName) || lists()[0];
+  }
+
   function renderArchive() {
-    const items = archived();
+    const all = archived();
     const col = el("section", { class: "col archive" });
+    const count = el("span", { class: "count" });
     col.append(el("div", { class: "col-head" },
       el("span", { class: "swatch-btn", "aria-hidden": "true" }),
       el("div", { class: "col-title" }, "Done"),
-      el("span", { class: "count" }, String(items.length))));
+      count));
     const body = el("div", { class: "col-body" });
-    if (!items.length) body.append(el("div", { class: "empty" }, "Finished todos land here each morning."));
-    let last = null;
-    for (const a of items) {
-      if (a.archivedDay !== last) { last = a.archivedDay; body.append(el("div", { class: "day-label" }, a.archivedDay ? pretty(a.archivedDay, { weekday: "short", month: "short", day: "numeric" }) : "Earlier")); }
-      body.append(el("div", { class: "todo done" },
-        el("span", { class: "dot", style: `width:8px;height:8px;border-radius:50%;margin-top:7px;flex:none;background:${a.fromColor}` }),
-        el("div", { class: "text" }, a.text),
-        el("span", { class: "from" }, a.fromName),
-        el("button", { class: "icon-btn", title: "Put back", "aria-label": "Put back on a list", onclick: () => restore(a) }, "↩")));
-    }
+    const summary = el("div", { class: "done-summary", role: "status" });
+
+    const search = el("input", { type: "search", id: "doneSearch", class: "done-search", placeholder: "Search Done…",
+      "aria-label": "Search finished todos", autocomplete: "off", spellcheck: "false", enterkeyhint: "search",
+      oninput: e => { doneView.q = e.target.value; fill(); },
+      onkeydown: e => { if (e.key === "Escape" && search.value) { e.stopPropagation(); search.value = doneView.q = ""; fill(); } } });
+    search.value = doneView.q;
+
+    const chips = el("div", { class: "done-chips", role: "group", "aria-label": "When finished" },
+      RANGES.map(([v, label]) => el("button", { type: "button", class: "chip", "data-range": v, "aria-pressed": String(doneView.range === v),
+        onclick: () => { doneView.range = v; chips.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", String(c.dataset.range === v))); fill(); } }, label)));
+
+    const names = [...new Set(all.map(a => a.fromName).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    if (doneView.list && !names.includes(doneView.list)) doneView.list = "";
+    const pick = el("select", { class: "done-list", "aria-label": "From list", onchange: e => { doneView.list = e.target.value; fill(); } },
+      el("option", { value: "" }, "Any list"), names.map(n => el("option", { value: n }, n)));
+    pick.value = doneView.list;
+
+    if (all.length) col.append(el("div", { class: "done-tools" }, search, chips, el("div", { class: "done-meta" }, summary, names.length > 1 ? pick : null)));
     col.append(body);
+
+    function fill() {
+      const items = filteredArchive(all);
+      const filtering = !!(doneView.q.trim() || doneView.range !== "all" || doneView.list);
+      count.textContent = filtering ? `${items.length} of ${all.length}` : String(all.length);
+      const n = items.length, plural = n === 1 ? "" : "s";
+      const when = { today: "today", week: "this week", month: "this month" }[doneView.range];
+      summary.textContent = !filtering ? "" : when && !doneView.q.trim() ? `${n} finished ${when}` : `${n} match${n === 1 ? "" : "es"}`;
+      summary.hidden = !filtering;
+      body.replaceChildren();
+      if (!all.length) { body.append(el("div", { class: "empty" }, "Finished todos land here each morning.")); return; }
+      if (!items.length) {
+        body.append(el("div", { class: "empty" }, doneView.q.trim() ? "Nothing in Done matches that." : "Nothing finished in this stretch yet."),
+          el("button", { type: "button", class: "btn clear-filter", onclick: () => { doneView.q = ""; doneView.range = "all"; doneView.list = ""; render(); } }, "Show everything"));
+        return;
+      }
+      let last = null;
+      for (const a of items) {
+        if (a.archivedDay !== last) { last = a.archivedDay; body.append(el("div", { class: "day-label" }, a.archivedDay ? pretty(a.archivedDay, { weekday: "short", month: "short", day: "numeric" }) : "Earlier")); }
+        const target = restoreTarget(a);
+        body.append(el("div", { class: "todo done" },
+          el("span", { class: "dot", style: `background:${a.fromColor}` }),
+          el("div", { class: "text" }, highlight(a.text)),
+          el("button", { type: "button", class: "put-back", title: `Put back on ${target ? target.name : "a list"}`, "aria-label": `Put “${a.text}” back on ${target ? target.name : "a list"}`, onclick: () => restore(a) },
+            el("span", { "aria-hidden": "true" }, "↩"), " ", target ? target.name : "")));
+      }
+    }
+    fill();
     return col;
   }
 
+  // Puts a finished todo back, unchecked, at the bottom of the list it came from.
   function restore(a) {
-    const list = lists().find(l => l.name === a.fromName) || lists()[0];
+    const list = restoreTarget(a);
     const order = Math.max(0, ...todosIn(list.id).map(t => t.order)) + 1;
     touch(a, { archived: false, archivedDay: null, done: false, doneDay: null, listId: list.id, order });
     commit(); toast(`Put back on ${list.name}`);
