@@ -44,15 +44,6 @@ body.page { display: block; min-height: 100%; }
 .page-main code { font-size: .9em; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 .page-main .updated { color: var(--muted); font-size: .9rem; }
 
-/* Draft notice on the legal pages, and spots Nate still has to fill in. */
-.draft {
-  border: 1px solid color-mix(in oklab, #e0a030 60%, var(--line));
-  background: color-mix(in oklab, #e0a030 14%, var(--surface));
-  border-radius: 10px; padding: 12px 14px; margin: 0 0 24px; font-size: .92rem;
-}
-.draft strong { display: block; margin-bottom: 2px; }
-.fill { background: color-mix(in oklab, #e0a030 30%, transparent); border-radius: 4px; padding: 0 4px; font-weight: 700; }
-
 /* What's New: one card per version. */
 .release {
   background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
