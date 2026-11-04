@@ -60,6 +60,22 @@ Every token must be different. If two `TOKEN_*` secrets hold the same value the 
 
 Open the app, tap **Settings**, and paste the Worker address and that person's token, then **Save and sync**. The first sync on a new device loads the saved board. The pill at the top shows **Synced**, **Syncing…**, **Offline** or **Sync problem** (tap it to retry).
 
+## Backups
+
+Settings → **Backups** has three buttons:
+
+- **Download backup** saves a JSON file with every list, todo and Done item. On a phone it opens the share sheet, so choose **Save to Files**.
+- **Download CSV** saves the same todos as a spreadsheet (list, todo, status, dates) for Numbers or Excel. It can't be restored.
+- **Restore from file…** reads a backup file and puts every list and todo in it back the way it was. Things added since the backup are kept unless you tick **Also remove lists and todos added since this backup**. The restore syncs to the other devices like any other edit.
+
+The Worker also keeps its own copies. Every night at 09:00 UTC (the cron trigger in `wrangler.toml`) it copies each board to a KV key `snap:<name>:<time>`, which KV deletes by itself after 30 days. When sync is on, Settings lists these copies and can restore or download any of them. Before any restore, the app asks the Worker for one more copy of the board as it was, labelled "before restore", so a restore can be undone the same way. The Worker's backup endpoints use the same token as `/data`, and a token only sees its own board's copies:
+
+| Request | What it does |
+| --- | --- |
+| `GET /snapshots` | Lists the board's copies, newest first, with counts. |
+| `GET /snapshots/<id>` | Returns one copy. |
+| `POST /snapshots` | Takes a copy now. |
+
 ## Local development
 
 Any static file server works, for example:

@@ -6,3 +6,8 @@ compatibility_date = "2026-10-01"
 [[kv_namespaces]]
 binding = "NOW_AND_THEN"
 id = "a8d1b6c4b4d243c2a05227906287293a"
+
+# Daily backup: copy every board to a snapshot that KV keeps for 30 days.
+# 09:00 UTC is the middle of the night in the US.
+[triggers]
+crons = ["0 9 * * *"]

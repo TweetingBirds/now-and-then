@@ -266,6 +266,20 @@ body:has(dialog.settings[open]) { overflow: hidden; }
   border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 9px 10px; font-weight: 400; width: 100%;
 }
 .settings .row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.settings .row.start { justify-content: flex-start; }
+.settings select {
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 8px; padding: 8px 10px;
+  font: inherit; font-size: .88rem; flex: 1 1 100%; min-width: 0;
+}
+.settings .cloud-backups { display: flex; flex-direction: column; gap: 8px; }
+.settings .restore-box {
+  display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px;
+  background: color-mix(in oklab, var(--margin) 7%, var(--surface));
+}
+.settings .restore-box[hidden], .settings .cloud-backups[hidden] { display: none; }
+.settings .restore-box p { color: var(--ink); }
+.settings .restore-box .toggle { align-items: flex-start; }
+.settings .restore-box .toggle input { margin-top: 3px; }
 .settings .msg { font-size: .85rem; min-height: 1.2em; color: var(--muted); }
 .settings .msg.bad { color: var(--margin); }
 .settings .version { font-variant-numeric: tabular-nums; }
