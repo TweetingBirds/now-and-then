@@ -240,7 +240,14 @@ body.is-dragging .board { scroll-snap-type: none; }
   position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
   background: var(--ink); color: var(--surface); padding: 9px 16px; border-radius: 999px; font-size: .9rem;
   box-shadow: var(--shadow); z-index: 60;
+  display: flex; align-items: center; gap: 14px; max-width: calc(100vw - 32px);
 }
+.toast-undo {
+  font: inherit; font-weight: 700; color: inherit; background: none; border: 0; cursor: pointer;
+  margin: -9px -10px -9px 0; padding: 9px 10px; border-radius: 999px; text-decoration: underline; text-underline-offset: 3px;
+}
+.toast-undo:hover { background: color-mix(in srgb, var(--surface) 14%, transparent); }
+.toast-undo:focus-visible { outline: 2px solid var(--surface); outline-offset: -4px; }
 @media (prefers-reduced-motion: no-preference) {
   .todo { transition: background .15s; }
   .toast { animation: rise .25s ease-out; }
