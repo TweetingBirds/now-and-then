@@ -11,6 +11,7 @@ A notebook-style todo list, made for Tiffany. It works the way her paper noteboo
 - **Done** can be searched and filtered by when a todo was finished (today, this week, this month) and which list it came from. The ↩ button on a finished todo puts it back, unchecked, on its list.
 - Dark mode follows the system, or pick Light or Dark per device in Settings. Phones give a small buzz when a todo is picked up and dropped (Android, and iPhone on iOS 18 or later).
 - On a Mac, keyboard shortcuts cover adding, moving and checking off todos. Press **?** to see them.
+- The bottom of Settings links to **What's New**, **Support & FAQ**, **Privacy** and **Terms**. What's New is marked *New* after an update until it's opened.
 
 It's a progressive web app: open it in Safari or Chrome and choose **Add to Home Screen** to install it. It works offline, and syncs through a small Cloudflare Worker when one is set up.
 
@@ -19,6 +20,7 @@ It's a progressive web app: open it in Safari or Chrome and choose **Add to Home
 | Path | What it is |
 | --- | --- |
 | `app/` | The web app: plain HTML, CSS and JavaScript, no build step. Deployed to GitHub Pages. |
+| `app/whats-new.html`, `support.html`, `privacy.html`, `terms.html` | Info pages. Each stands on its own (`pages.css`, `pages.js`), so the Support and Privacy URLs can also go on an App Store listing. Add a card to What's New whenever `APP_VERSION` is bumped. Privacy and Terms are drafts until reviewed. |
 | `app/sw.js` | Service worker for offline use. Its cache name is stamped with the build on each deploy. |
 | `worker/` | Cloudflare Worker that stores each person's board in Workers KV. |
 | `.github/workflows/pages.yml` | Deploys `app/` to GitHub Pages on every push to `main`, stamping the build number, commit and date into the app and writing `version.json`. |

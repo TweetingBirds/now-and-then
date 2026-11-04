@@ -340,6 +340,13 @@ body:has(dialog.settings[open]) { overflow: hidden; }
 .settings .version { font-variant-numeric: tabular-nums; }
 .settings .row.update { align-items: center; }
 .settings .row.update .msg:empty { display: none; }
+.settings .info-links { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: .88rem; }
+.settings .info-links a { color: var(--accent); display: inline-flex; align-items: center; gap: 6px; min-height: 32px; }
+.settings .new-dot {
+  font-size: .68rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--surface); background: var(--margin); border-radius: 999px; padding: 1px 7px;
+}
+.settings .new-dot[hidden] { display: none; }
 
 /* ---------- Appearance, haptics and keyboard shortcuts ---------- */
 /* Theme picker: a three-way segmented control. */

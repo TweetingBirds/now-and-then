@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Privacy · Now and Then</title>
+  <meta name="description" content="How Now and Then stores and syncs your lists.">
+  <meta name="theme-color" content="#eef0f3" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#12161c" media="(prefers-color-scheme: dark)">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Atkinson+Hyperlegible:wght@400;700&family=Kalam:wght@400&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="pages.css">
+  <script>try{var t=(JSON.parse(localStorage.getItem("nat.local.v1"))||{}).theme;if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body class="page">
+  <header class="page-top">
+    <a class="back" href="./">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      Now and Then
+    </a>
+    <nav class="page-nav" aria-label="About Now and Then">
+      <a href="whats-new.html">What's New</a>
+      <a href="support.html">Support</a>
+      <a href="privacy.html" aria-current="page">Privacy</a>
+      <a href="terms.html">Terms</a>
+    </nav>
+  </header>
+  <main class="page-main">
+    <div class="draft" role="note">
+      <strong>Draft for review</strong>
+      This policy hasn't been reviewed or approved yet. Highlighted spots still need details filled in.
+    </div>
+
+    <h1>Privacy</h1>
+    <p class="updated">Effective <span class="fill">[date]</span></p>
+
+    <p>Now and Then is a todo list. Your todos are yours. The app has no accounts, no ads, no analytics and no tracking, and your lists are never sold or shared for marketing. This page explains exactly where your lists are kept and who can see them.</p>
+
+    <h2>The short version</h2>
+    <ul>
+      <li>Your lists are saved on your device first.</li>
+      <li>If you turn on sync, a copy is also kept by the sync service so your other devices can get it. Sync is off until you set it up.</li>
+      <li>When sync is on, a nightly backup copy is kept for 30 days, then deleted automatically.</li>
+      <li>Nothing about you is collected beyond the lists you write and the settings you choose.</li>
+    </ul>
+
+    <h2>What the app stores</h2>
+    <p>Now and Then stores what you put into it:</p>
+    <ul>
+      <li>Your lists: their names, colors and order.</li>
+      <li>Your todos: their text, which list they're in, whether they're done, and when they were added, changed and finished.</li>
+      <li>Board settings, such as whether unfinished Tomorrow todos move into Now each morning.</li>
+      <li>Settings for each device: light or dark appearance, whether drag buzzes are on, and the sync address and access token if you set up sync.</li>
+    </ul>
+    <p>It doesn't ask for your name, email address, location, contacts or anything else about you. It doesn't use cookies.</p>
+
+    <h2>On your device</h2>
+    <p>Everything above is saved in your browser's storage for this site, on the device you're using. Without sync, your lists never leave that device. Erasing the website data for this site, or deleting the app from your Home Screen, erases them.</p>
+
+    <!--
+      For the native iPhone, iPad and Mac app, replace the next section ("Sync") with
+      something like this, and drop the third-party rows for GitHub Pages and Google Fonts:
+
+      <h2>iCloud</h2>
+      <p>If you're signed in to iCloud, Now and Then keeps your lists in your own private
+      iCloud database so they appear on all your devices. That data is stored by Apple
+      under your Apple Account and is covered by Apple's privacy policy. It is never sent
+      to us, and we can't see it. Turn off iCloud for Now and Then in Settings to keep
+      your lists on this device only.</p>
+    -->
+    <h2 id="sync">Sync</h2>
+    <p>Sync is optional and off until you enter a sync address and access token in Settings. When it's on:</p>
+    <ul>
+      <li>The app sends your board (the lists, todos and board settings above) to the sync service after each change, and checks it for changes from your other devices about every 20 seconds while the app is on screen.</li>
+      <li>The sync service is a small program running on Cloudflare Workers, which saves your board in Cloudflare Workers KV. Everything sent to and from it is encrypted in transit with HTTPS.</li>
+      <li>Your access token decides which board you get. Each token opens one board, and only that board and its backups.</li>
+      <li>The sync service doesn't keep a log of your requests and doesn't store anything except your board and its backups.</li>
+    </ul>
+    <p>The sync service is run by <span class="fill">[name]</span> using a Cloudflare account they control. Your board is not end-to-end encrypted, so the person who runs the sync service could technically read it. They don't look at your lists except to help when you ask, for example to recover something you lost. If you run your own sync service, your board is stored in your own Cloudflare account instead.</p>
+
+    <h2 id="backups">Backups and deleted items</h2>
+    <ul>
+      <li>When sync is on, the sync service saves a copy of your board every night. Each copy is deleted automatically after 30 days.</li>
+      <li>Before you restore a backup, one more copy is saved so the restore can be undone. It is also deleted after 30 days.</li>
+      <li>When you delete a todo or list, the app keeps a hidden record of it for up to 60 days, so your other devices learn it was deleted instead of bringing it back. After 60 days the record is removed.</li>
+      <li>Backup files you download with <strong>Download backup</strong> or <strong>Download CSV</strong> are saved where you choose. They aren't sent anywhere.</li>
+    </ul>
+
+    <h2>Services the app relies on</h2>
+    <p>Like any website, the services below see basic technical details when your device connects to them, such as your IP address and browser type. They don't see your lists, except Cloudflare, which stores your board when sync is on.</p>
+    <ul>
+      <li><strong>GitHub Pages</strong> serves the app's files. See the <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub Privacy Statement</a>.</li>
+      <li><strong>Google Fonts</strong> serves the app's typefaces. See the <a href="https://developers.google.com/fonts/faq/privacy">Google Fonts privacy FAQ</a>.</li>
+      <li><strong>Cloudflare</strong> runs the sync service and stores synced boards and backups. See the <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare Privacy Policy</a>.</li>
+    </ul>
+
+    <h2 id="delete">Your choices</h2>
+    <ul>
+      <li><strong>See your data.</strong> <strong>Download backup</strong> in Settings saves everything the app has for your board.</li>
+      <li><strong>Stop syncing.</strong> Clear the sync address and token in Settings. Your lists stay on the device, and nothing more is sent.</li>
+      <li><strong>Delete your synced board.</strong> Email <span class="fill">[privacy email]</span> and your board and its backups will be removed from the sync service, usually within a few days. If you run your own sync service, delete the keys for your board in your Cloudflare dashboard.</li>
+      <li><strong>Delete everything on a device.</strong> Clear the website data for this site, or delete the app from your Home Screen.</li>
+    </ul>
+
+    <h2>Children</h2>
+    <p>Now and Then isn't directed at children under 13 and doesn't knowingly collect personal information from them. Because the app has no accounts and asks for nothing about you, the only information it holds is what's written in the lists.</p>
+
+    <h2>Changes to this policy</h2>
+    <p>If this policy changes, the new version will be posted on this page with a new effective date, and important changes will be noted in <a href="whats-new.html">What's New</a>.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about privacy? Email <span class="fill">[privacy email]</span>.</p>
+  </main>
+  <script src="pages.js"></script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+/* Info pages (What's New, Support, Privacy, Terms). Loaded after styles.css, which
+   supplies the color tokens, fonts and dark mode. Each page stands on its own, so
+   the same files can later be linked from an App Store listing. */
+html, body { height: auto; }
+body.page { display: block; min-height: 100%; }
+
+.page-top {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap;
+  padding-block: max(10px, env(safe-area-inset-top, 0px)) 10px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: color-mix(in oklab, var(--bg) 92%, transparent);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+.page-top .back {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 44px;
+  color: var(--ink); text-decoration: none; font-weight: 700;
+}
+.page-top .back svg { flex: none; }
+.page-nav { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+.page-nav a {
+  padding: 6px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: .88rem;
+}
+.page-nav a:hover { color: var(--ink); background: color-mix(in oklab, var(--ink) 6%, transparent); }
+.page-nav a[aria-current="page"] { color: var(--ink); background: var(--surface); box-shadow: var(--shadow); font-weight: 700; }
+
+.page-main {
+  max-width: 680px; margin: 0 auto;
+  padding-block: 24px max(40px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  font-size: 16px; line-height: 1.55;
+}
+.page-main h1 { font-family: var(--font-display); font-weight: 700; font-size: 2rem; letter-spacing: -.01em; margin: 0 0 4px; line-height: 1.15; }
+.page-main .lede { color: var(--muted); margin: 0 0 24px; }
+.page-main h2 { font-family: var(--font-display); font-size: 1.25rem; margin: 32px 0 8px; line-height: 1.25; }
+.page-main h3 { font-size: 1rem; margin: 20px 0 6px; }
+.page-main p, .page-main ul, .page-main ol { margin: 0 0 12px; }
+.page-main ul, .page-main ol { padding-left: 1.3em; }
+.page-main li { margin-bottom: 6px; }
+.page-main a { color: var(--accent); }
+.page-main code { font-size: .9em; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.page-main .updated { color: var(--muted); font-size: .9rem; }
+
+/* Draft notice on the legal pages, and spots Nate still has to fill in. */
+.draft {
+  border: 1px solid color-mix(in oklab, #e0a030 60%, var(--line));
+  background: color-mix(in oklab, #e0a030 14%, var(--surface));
+  border-radius: 10px; padding: 12px 14px; margin: 0 0 24px; font-size: .92rem;
+}
+.draft strong { display: block; margin-bottom: 2px; }
+.fill { background: color-mix(in oklab, #e0a030 30%, transparent); border-radius: 4px; padding: 0 4px; font-weight: 700; }
+
+/* What's New: one card per version. */
+.release {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
+  padding: 16px 18px 6px; margin: 0 0 16px;
+}
+.release h2 { margin: 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.release time { font-family: var(--font-hand); font-weight: 400; font-size: 1.05rem; color: var(--muted); }
+.release .tag {
+  font-family: var(--font-body); font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--surface); background: var(--accent); border-radius: 999px; padding: 2px 8px;
+}
+.release ul { margin-top: 10px; }
+
+/* Support: FAQ as expandable questions. */
+.faq details {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px; margin: 0 0 8px;
+}
+.faq summary {
+  cursor: pointer; padding: 12px 14px; font-weight: 700; list-style: none;
+  display: flex; justify-content: space-between; gap: 12px; align-items: center;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: "+"; color: var(--muted); font-weight: 400; font-size: 1.3rem; line-height: 1; }
+.faq details[open] summary::after { content: "–"; }
+.faq details > div { padding: 0 14px 4px; }
+.contact {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin: 0 0 8px;
+}
+.contact p:last-child { margin-bottom: 0; }
+
+.page-foot { color: var(--muted); font-size: .85rem; margin-top: 40px; border-top: 1px solid var(--line); padding-top: 16px; }
+
+@media (max-width: 520px) {
+  .page-nav { margin-left: 0; width: 100%; }
+  .page-main h1 { font-size: 1.7rem; }
+}
