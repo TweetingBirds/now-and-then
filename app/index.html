@@ -74,6 +74,32 @@
       </label>
       <div class="msg" id="syncMsg" role="status"></div>
 
+      <h3>Backups</h3>
+      <p>Save a copy of all your lists, including Done, to this device. Keep the backup file to restore it later. The CSV file opens in Numbers or Excel.</p>
+      <div class="row start">
+        <button class="btn" type="button" id="exportJson">Download backup</button>
+        <button class="btn" type="button" id="exportCsv">Download CSV</button>
+        <button class="btn" type="button" id="importJson">Restore from file…</button>
+        <input type="file" id="importFile" accept=".json,application/json" hidden>
+      </div>
+      <div class="cloud-backups" id="cloudBackups" hidden>
+        <p id="cloudInfo">The sync Worker saves a copy of your board every night and keeps it for 30 days.</p>
+        <div class="row start">
+          <select id="snapList" aria-label="Saved copies"></select>
+          <button class="btn" type="button" id="snapRestore">Restore…</button>
+          <button class="btn" type="button" id="snapDownload">Download</button>
+        </div>
+      </div>
+      <div class="restore-box" id="restoreBox" hidden>
+        <p id="restoreWhat"></p>
+        <label class="toggle"><input type="checkbox" id="restoreReplace"> Also remove lists and todos added since this backup</label>
+        <div class="row">
+          <button class="btn" type="button" id="restoreCancel">Cancel</button>
+          <button class="btn primary" type="button" id="restoreGo">Restore</button>
+        </div>
+      </div>
+      <div class="msg" id="backupMsg" role="status"></div>
+
       <h3>About</h3>
       <p class="version" id="versionInfo"></p>
       <div class="row update" style="justify-content:flex-start">
