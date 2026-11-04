@@ -6,7 +6,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.5.0";
+  const APP_VERSION = "1.6.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -1403,6 +1403,11 @@
       if (fresh && !dlg.open) toast(`A new version is ready. Open Settings to reload.`);
     } catch { /* offline or blocked: keep what we show */ }
   }
+  // "New" on the What's New link until it's opened once after an update.
+  function showWhatsNew() { document.getElementById("whatsNewDot").hidden = local.seenVersion === APP_VERSION; }
+  document.getElementById("whatsNewLink").addEventListener("click", () => { local.seenVersion = APP_VERSION; write(LOCAL_KEY, local); showWhatsNew(); });
+  showWhatsNew();
+
   document.getElementById("reloadApp").addEventListener("click", async () => {
     try { const reg = await navigator.serviceWorker?.getRegistration(); await reg?.update(); } catch {}
     location.reload();
