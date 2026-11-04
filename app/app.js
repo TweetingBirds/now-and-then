@@ -6,7 +6,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.3.0";
+  const APP_VERSION = "1.4.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -752,6 +752,7 @@
     if (local.otherBoard) { sm.className = "msg bad"; sm.textContent = document.getElementById("syncStatus").title; }
     else { sm.className = "msg"; sm.textContent = syncConfigured() && local.board ? `Syncing with ${boardLabel(local.board)}.` : ""; }
     showVersion();
+    closeRestore(); backupMsg(""); loadSnapshots();
     dlg.showModal();
     dlg.querySelector(".settings-body").scrollTop = 0;
     checkForUpdate();
@@ -786,6 +787,194 @@
     const result = await sync();
     if (result === true) { msg.textContent = `Connected to ${boardLabel(local.board)}. Your lists are synced.`; render(); setTimeout(() => dlg.close(), 1400); }
     else { msg.className = "msg bad"; msg.textContent = "Couldn't sync: " + result; }
+  });
+
+  // ---------- backups ----------
+  // A backup file is the board itself plus a few labels, so the same code reads a
+  // downloaded file and a snapshot from the Worker.
+  const backupMsg = (text, bad) => { const m = document.getElementById("backupMsg"); m.className = "msg" + (bad ? " bad" : ""); m.textContent = text; };
+  const stampName = () => { const d = new Date(); return keyOf(d) + "-" + String(d.getHours()).padStart(2, "0") + String(d.getMinutes()).padStart(2, "0"); };
+  const live = (xs) => (xs || []).filter(x => x && !x.deleted);
+
+  // On a phone the share sheet ("Save to Files") is the dependable way to keep a
+  // file; a computer just downloads it.
+  async function saveFile(name, text, type) {
+    const blob = new Blob([text], { type });
+    let file = null;
+    try { file = new File([blob], name, { type }); } catch (e) {}
+    if (file && matchMedia("(pointer: coarse)").matches && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); return true; }
+      catch (e) { if (e.name === "AbortError") return false; } // otherwise fall back to a download
+    }
+    const a = el("a", { href: URL.createObjectURL(blob), download: name, style: "display:none" });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+    return true;
+  }
+
+  function backupJson(b = board, owner = local.board) {
+    return JSON.stringify({ app: "Now and Then", exportedAt: new Date().toISOString(), owner: owner || null,
+      version: 1, settings: b.settings, lists: b.lists, todos: b.todos }, null, 2);
+  }
+
+  // One row per todo: the lists in board order, then everything in Done, newest first.
+  function boardCsv() {
+    const cell = (v) => {
+      let s = v == null ? "" : String(v);
+      if (/^[=+@\t]/.test(s)) s = "'" + s; // keep spreadsheets from running it as a formula
+      return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const rows = [["List", "Todo", "Status", "Checked on", "Moved to Done on"]];
+    for (const l of lists()) for (const t of todosIn(l.id)) rows.push([l.name, t.text, t.done ? "Checked" : "Open", t.doneDay || "", ""]);
+    for (const t of archived()) rows.push([t.fromName || "", t.text, "Done", t.doneDay || "", t.archivedDay || ""]);
+    return "﻿" + rows.map(r => r.map(cell).join(",")).join("\r\n") + "\r\n";
+  }
+
+  document.getElementById("exportJson").addEventListener("click", async () => {
+    if (await saveFile(`now-and-then-${stampName()}.json`, backupJson(), "application/json")) backupMsg("Backup saved.");
+  });
+  document.getElementById("exportCsv").addEventListener("click", async () => {
+    if (await saveFile(`now-and-then-${stampName()}.csv`, boardCsv(), "text/csv")) backupMsg("CSV saved.");
+  });
+
+  // Checks a parsed file looks like a board and keeps only well-formed lists and todos.
+  function readBackup(data) {
+    if (!data || !Array.isArray(data.lists) || !Array.isArray(data.todos)) throw new Error("This file isn't a Now and Then backup.");
+    const ok = (x) => x && typeof x === "object" && typeof x.id === "string";
+    const lists = data.lists.filter(l => ok(l) && typeof l.name === "string");
+    const todos = data.todos.filter(t => ok(t) && typeof t.text === "string");
+    if (!live(lists).length) throw new Error("This backup has no lists in it.");
+    return { owner: typeof data.owner === "string" ? data.owner : null, when: data.exportedAt || null,
+      settings: data.settings && typeof data.settings === "object" ? data.settings : null, lists, todos };
+  }
+
+  // Restoring puts every list and todo in the backup back the way it was, stamped as
+  // the newest edit so sync carries it to the other devices. Things added since the
+  // backup stay unless "replace" is on, in which case they're deleted.
+  function restoreBoard(bk, replace) {
+    const t = now(), keep = new Set();
+    const put = (items, into) => {
+      for (const item of live(items)) {
+        keep.add(item.id);
+        const copy = Object.assign({}, item, { updatedAt: t });
+        const cur = into.find(x => x.id === item.id);
+        if (cur) { for (const k of Object.keys(cur)) if (!(k in copy)) delete cur[k]; Object.assign(cur, copy); }
+        else into.push(copy);
+      }
+    };
+    put(bk.lists, board.lists);
+    put(bk.todos, board.todos);
+    if (replace) for (const x of [...board.lists, ...board.todos]) if (!x.deleted && !keep.has(x.id)) touch(x, { deleted: true });
+    if (bk.settings) board.settings = Object.assign({}, board.settings, bk.settings, { updatedAt: t });
+    repairOrphans();
+    sweepDone();
+    commit();
+  }
+
+  let pendingRestore = null;
+  function offerRestore(bk, label) {
+    pendingRestore = bk;
+    const n = live(bk.todos).filter(x => !x.archived).length, d = live(bk.todos).filter(x => x.archived).length;
+    let text = `Restore ${label}? It has ${live(bk.lists).length} list${live(bk.lists).length === 1 ? "" : "s"}, ${n} todo${n === 1 ? "" : "s"} and ${d} in Done.`;
+    if (bk.owner && local.board && bk.owner !== local.board) text += ` Heads up: it came from ${boardLabel(bk.owner)}, and this device syncs with ${boardLabel(local.board)}.`;
+    document.getElementById("restoreWhat").textContent = text;
+    document.getElementById("restoreReplace").checked = false;
+    const box = document.getElementById("restoreBox");
+    box.hidden = false; box.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    backupMsg("");
+  }
+  function closeRestore() { pendingRestore = null; document.getElementById("restoreBox").hidden = true; }
+  document.getElementById("restoreCancel").addEventListener("click", closeRestore);
+  document.getElementById("restoreGo").addEventListener("click", async () => {
+    if (!pendingRestore) return;
+    const bk = pendingRestore, replace = document.getElementById("restoreReplace").checked;
+    closeRestore();
+    // Ask the Worker to keep a copy of the board as it is now, so a restore can itself be undone.
+    if (syncConfigured() && local.synced && !local.otherBoard && navigator.onLine) {
+      backupMsg("Saving a copy of your lists first…");
+      try { await snapFetch("?reason=before%20restore", { method: "POST" }); } catch (e) {}
+    }
+    restoreBoard(bk, replace);
+    backupMsg(syncConfigured() ? "Restored. Your other devices will pick it up on their next sync." : "Restored.");
+    toast("Backup restored");
+    loadSnapshots();
+  });
+
+  const fileInput = document.getElementById("importFile");
+  document.getElementById("importJson").addEventListener("click", () => { fileInput.value = ""; fileInput.click(); });
+  fileInput.addEventListener("change", async () => {
+    const f = fileInput.files && fileInput.files[0];
+    if (!f) return;
+    try {
+      const bk = readBackup(JSON.parse(await f.text()));
+      const when = bk.when && !isNaN(new Date(bk.when)) ? new Date(bk.when).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : null;
+      offerRestore(bk, when ? `the backup from ${when}` : `“${f.name}”`);
+    } catch (e) {
+      closeRestore();
+      backupMsg(e instanceof SyntaxError ? "That file couldn't be read as a backup." : e.message, true);
+    }
+  });
+
+  // ---- copies kept by the Worker ----
+  function snapUrl() { return local.syncUrl.replace(/\/+$/, "") + "/snapshots"; }
+  async function snapFetch(path = "", opts = {}) {
+    const res = await fetch(snapUrl() + path, Object.assign({ cache: "no-store" }, opts, { headers: { "Authorization": "Bearer " + local.syncToken } }));
+    if (res.status === 404 && !path) throw new Error("This Worker doesn't keep backups yet.");
+    if (!res.ok) throw new Error("The Worker answered " + res.status + ".");
+    const who = res.headers.get("X-Board");
+    if (local.board && who && who !== local.board) throw new Error("This token opens a different board.");
+    return res.json();
+  }
+  const snapLabel = (s) => {
+    const when = new Date(s.at || s.id);
+    let text = isNaN(when) ? s.id : when.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    if (typeof s.todos === "number") text += ` · ${s.todos} todo${s.todos === 1 ? "" : "s"}`;
+    if (s.reason && s.reason !== "daily") text += ` · ${s.reason}`;
+    return text;
+  };
+  let snapshots = [];
+  async function loadSnapshots() {
+    const box = document.getElementById("cloudBackups");
+    if (!syncConfigured() || !local.synced || local.otherBoard || !navigator.onLine) { box.hidden = true; return; }
+    try {
+      const got = await snapFetch();
+      snapshots = got.snapshots || [];
+      const sel = document.getElementById("snapList");
+      sel.replaceChildren(...snapshots.map(s => el("option", { value: s.id }, snapLabel(s))));
+      const none = !snapshots.length;
+      if (none) sel.append(el("option", { value: "" }, "No saved copies yet"));
+      sel.disabled = none;
+      document.getElementById("snapRestore").disabled = none;
+      document.getElementById("snapDownload").disabled = none;
+      document.getElementById("cloudInfo").textContent =
+        `The sync Worker saves a copy of ${boardLabel(got.board || local.board)} every night and keeps it for ${got.days || 30} days.` +
+        (none ? " The first one is saved tonight." : "");
+      box.hidden = false;
+    } catch (e) {
+      box.hidden = true; // an older Worker, or offline: the file backups above still work
+    }
+  }
+  async function getSnapshot() {
+    const id = document.getElementById("snapList").value;
+    const s = snapshots.find(x => x.id === id);
+    if (!s) return null;
+    const data = await snapFetch("/" + encodeURIComponent(id));
+    return { s, data };
+  }
+  document.getElementById("snapRestore").addEventListener("click", async () => {
+    backupMsg("Loading…");
+    try {
+      const got = await getSnapshot(); if (!got) return backupMsg("");
+      offerRestore(Object.assign(readBackup(got.data), { owner: local.board }), `the copy from ${snapLabel(got.s).split(" · ")[0]}`);
+    } catch (e) { backupMsg("Couldn't load that copy: " + e.message, true); }
+  });
+  document.getElementById("snapDownload").addEventListener("click", async () => {
+    backupMsg("Loading…");
+    try {
+      const got = await getSnapshot(); if (!got) return backupMsg("");
+      const name = `now-and-then-${(got.s.at || got.s.id).slice(0, 16).replace(/[T:]/g, "-")}.json`;
+      if (await saveFile(name, backupJson(got.data, local.board), "application/json")) backupMsg("Copy saved."); else backupMsg("");
+    } catch (e) { backupMsg("Couldn't download that copy: " + e.message, true); }
   });
 
   // ---------- day changes & lifecycle ----------
@@ -857,5 +1046,5 @@
   checkForUpdate();
 
   // exposed for tests
-  window.__nat = { mergeBoards, get board() { return board; } };
+  window.__nat = { mergeBoards, restoreBoard, readBackup, boardCsv, backupJson, get board() { return board; } };
 })();
