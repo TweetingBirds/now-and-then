@@ -242,6 +242,11 @@ body.is-dragging .board { scroll-snap-type: none; }
   box-shadow: var(--shadow); z-index: 60;
   display: flex; align-items: center; gap: 14px; max-width: calc(100vw - 32px);
 }
+/* Undo the browser's popover box (centered, bordered) so the toast keeps its place. */
+.toast[popover] { inset: auto; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); margin: 0; border: 0; overflow: visible; }
+.toast[popover]:not(:popover-open) { display: none; }
+.settings .msg.device-msg:empty { display: none; }
+.settings .msg.device-msg.ok { color: var(--ink); }
 .toast-undo {
   font: inherit; font-weight: 700; color: inherit; background: none; border: 0; cursor: pointer;
   margin: -9px -10px -9px 0; padding: 9px 10px; border-radius: 999px; text-decoration: underline; text-underline-offset: 3px;
