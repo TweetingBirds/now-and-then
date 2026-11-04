@@ -139,3 +139,152 @@ test("snapshotAll covers invited boards", async () => {
   assert.equal(snaps.length, 2);
   assert.ok(snaps.some(k => k.startsWith(`snap:${j.board}:`)));
 });
+
+// ---------- shared lists ----------
+const TIFF = "tiffany-owner-token-0123";
+const get = async (e, token) => (await call(e, "GET", "/data", { token })).json();
+const put = async (e, token, body) => (await call(e, "PUT", "/data", { token, body })).json();
+const live = (b) => ({ lists: b.lists.filter(l => !l.deleted), todos: b.todos.filter(t => !t.deleted) });
+async function setUp() {
+  const e = env();
+  await put(e, NATE, { lists: [
+    { id: "n-now", name: "Now", role: "now", order: 1, updatedAt: 1 },
+    { id: "groc", name: "Groceries", color: "#5cc6a7", role: "later", order: 2, updatedAt: 1 },
+  ], todos: [
+    { id: "n1", listId: "n-now", text: "Nate's private", updatedAt: 1 },
+    { id: "g1", listId: "groc", text: "milk", updatedAt: 1 },
+  ] });
+  await put(e, TIFF, { lists: [{ id: "t-now", name: "Now", role: "now", order: 1, updatedAt: 1 }],
+    todos: [{ id: "t1", listId: "t-now", text: "Tiffany's private", updatedAt: 1 }] });
+  let r = await call(e, "POST", "/shared", { token: NATE, body: { listId: "groc" } });
+  assert.equal(r.status, 200);
+  const { sid } = await r.json();
+  const inv = await (await call(e, "POST", `/shared/${sid}/invites`, { token: NATE })).json();
+  r = await call(e, "POST", "/shared/join", { token: TIFF, body: { code: inv.code } });
+  assert.equal(r.status, 200);
+  return { e, sid, code: inv.code };
+}
+
+test("sharing a list puts it on both boards and nothing else", async () => {
+  const { e, sid, code } = await setUp();
+  const t = live(await get(e, TIFF));
+  assert.deepEqual(t.lists.map(l => l.name).sort(), ["Groceries", "Now"]);
+  const g = t.lists.find(l => l.name === "Groceries");
+  assert.equal(g.shared, sid);
+  assert.deepEqual(g.members, ["Nate", "Tiffany"]);
+  assert.equal(g.role, null, "shared lists drop the Later role");
+  assert.equal(g.order, 2, "placed after Tiffany's lists");
+  assert.deepEqual(t.todos.map(x => x.text).sort(), ["Tiffany's private", "milk"]);
+  const n = live(await get(e, NATE));
+  assert.deepEqual(n.todos.map(x => x.text).sort(), ["Nate's private", "milk"]);
+  assert.ok(!e.NOW_AND_THEN.m.get("board:nate").v.includes("milk"), "the shared todos moved out of Nate's board");
+  const r = await call(e, "POST", "/shared/join", { token: TIFF, body: { code } });
+  assert.equal(r.status, 404, "share links are single use");
+});
+
+test("edits, moves and renames flow between the two boards", async () => {
+  const { e, sid } = await setUp();
+  // Tiffany adds to the shared list and moves her private todo into it.
+  let tb = await get(e, TIFF);
+  tb.todos.push({ id: "g2", listId: "groc", text: "eggs", updatedAt: Date.now() });
+  tb.todos.find(x => x.id === "t1").listId = "groc"; tb.todos.find(x => x.id === "t1").updatedAt = Date.now();
+  tb = await put(e, TIFF, tb);
+  let n = live(await get(e, NATE));
+  assert.deepEqual(n.todos.filter(x => x.listId === "groc").map(x => x.text).sort(), ["Tiffany's private", "eggs", "milk"]);
+  assert.ok(!e.NOW_AND_THEN.m.get("board:tiffany").v.includes("Tiffany's private"));
+
+  // Nate takes "milk" into his private Now list.
+  const nb = await get(e, NATE);
+  Object.assign(nb.todos.find(x => x.id === "g1"), { listId: "n-now", updatedAt: Date.now() });
+  await put(e, NATE, nb);
+  n = live(await get(e, NATE));
+  assert.equal(n.todos.find(x => x.id === "g1").listId, "n-now", "still live for Nate");
+  let t = await get(e, TIFF);
+  assert.ok(t.todos.find(x => x.id === "g1").deleted, "gone for Tiffany");
+  // Tiffany's phone hadn't synced and sends its old copy back: it stays gone.
+  const stale = { lists: tb.lists, todos: tb.todos };
+  t = await put(e, TIFF, stale);
+  assert.ok(t.todos.find(x => x.id === "g1").deleted);
+  n = live(await get(e, NATE));
+  assert.equal(n.todos.find(x => x.id === "g1").listId, "n-now");
+  assert.ok(!e.NOW_AND_THEN.m.get("board:tiffany").v.includes('"g1"'), "the tombstone lives in the shared list, not her board");
+
+  // Tiffany renames and moves the list on her board; Nate gets the name, not her order.
+  const tl = await get(e, TIFF);
+  Object.assign(tl.lists.find(l => l.id === "groc"), { name: "Shopping", order: 0, updatedAt: Date.now() + 1 });
+  await put(e, TIFF, tl);
+  const ng = (await get(e, NATE)).lists.find(l => l.id === "groc");
+  assert.equal(ng.name, "Shopping");
+  assert.equal(ng.order, 2);
+  assert.equal(ng.shared, sid);
+});
+
+test("sharing limits", async () => {
+  const { e, sid } = await setUp();
+  let r = await call(e, "POST", "/shared", { token: NATE, body: { listId: "n-now" } });
+  assert.equal(r.status, 400, "Now can't be shared");
+  r = await call(e, "POST", "/shared", { token: NATE, body: { listId: "nope" } });
+  assert.equal(r.status, 404);
+  const inv = await (await call(e, "POST", "/invites", { token: NATE, body: {} })).json();
+  const linda = await (await call(e, "POST", "/join", { body: { code: inv.code, name: "linda" } })).json();
+  r = await call(e, "POST", `/shared/${sid}/invites`, { token: linda.token });
+  assert.equal(r.status, 404, "only members can invite");
+  // Linda's board is full: 10 lists.
+  await put(e, linda.token, { lists: Array.from({ length: 10 }, (_, i) => ({ id: "L" + i, name: "L" + i, order: i, updatedAt: 1 })), todos: [] });
+  const code = (await (await call(e, "POST", `/shared/${sid}/invites`, { token: TIFF })).json()).code;
+  r = await call(e, "POST", "/shared/join", { token: linda.token, body: { code } });
+  assert.equal(r.status, 409);
+});
+
+test("leaving takes it off your board only; the last one out deletes it", async () => {
+  const { e, sid } = await setUp();
+  const before = await get(e, TIFF);
+  let r = await call(e, "DELETE", `/shared/${sid}`, { token: TIFF });
+  assert.equal(r.status, 200);
+  let t = await get(e, TIFF);
+  assert.ok(t.lists.find(l => l.id === "groc").deleted);
+  assert.ok(t.todos.find(x => x.id === "g1").deleted);
+  // Her other phone still has the list and sends it: it doesn't come back.
+  t = live(await put(e, TIFF, before));
+  assert.ok(!t.lists.some(l => l.id === "groc"));
+  assert.ok(!t.todos.some(x => x.id === "g1"));
+  let n = live(await get(e, NATE));
+  const g = n.lists.find(l => l.id === "groc");
+  assert.deepEqual(g.members, ["Nate"]);
+  assert.ok(n.todos.some(x => x.id === "g1"), "the list keeps its todos for Nate");
+
+  // An older app deletes the list instead of leaving: same thing.
+  const nb = await get(e, NATE);
+  Object.assign(nb.lists.find(l => l.id === "groc"), { deleted: true, updatedAt: Date.now() });
+  await put(e, NATE, nb);
+  assert.ok(!e.NOW_AND_THEN.m.has("shared:" + sid), "deleted when the last member leaves");
+  n = live(await get(e, NATE));
+  assert.ok(!n.lists.some(l => l.id === "groc"));
+  assert.ok(n.todos.some(x => x.id === "n1"), "Nate's private todos are untouched");
+});
+
+test("rejoining after leaving shows the list again; deleting a board leaves its lists", async () => {
+  const { e, sid } = await setUp();
+  await call(e, "DELETE", `/shared/${sid}`, { token: TIFF });
+  const code = (await (await call(e, "POST", `/shared/${sid}/invites`, { token: NATE })).json()).code;
+  await call(e, "POST", "/shared/join", { token: TIFF, body: { code } });
+  const t = live(await get(e, TIFF));
+  assert.ok(t.lists.some(l => l.id === "groc"));
+  assert.ok(t.todos.some(x => x.id === "g1"));
+
+  const inv = await (await call(e, "POST", "/invites", { token: NATE, body: {} })).json();
+  const linda = await (await call(e, "POST", "/join", { body: { code: inv.code, name: "linda" } })).json();
+  const c2 = (await (await call(e, "POST", `/shared/${sid}/invites`, { token: NATE })).json()).code;
+  await call(e, "POST", "/shared/join", { token: linda.token, body: { code: c2 } });
+  assert.deepEqual((await get(e, NATE)).lists.find(l => l.id === "groc").members, ["Nate", "Tiffany", "Linda"]);
+  await call(e, "DELETE", "/data?confirm=delete", { token: linda.token });
+  assert.deepEqual((await get(e, NATE)).lists.find(l => l.id === "groc").members, ["Nate", "Tiffany"]);
+});
+
+test("snapshots include shared lists", async () => {
+  const { e } = await setUp();
+  const r = await call(e, "POST", "/snapshots", { token: TIFF });
+  const s = await r.json();
+  assert.equal(s.lists, 2);
+  assert.equal(s.todos, 2);
+});
