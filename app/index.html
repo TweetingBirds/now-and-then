@@ -35,116 +35,176 @@
   <main class="board" id="board"></main>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <dialog class="settings" id="settings">
+  <dialog class="settings" id="settings" aria-labelledby="settingsTitle">
     <form method="dialog" id="settingsForm">
       <div class="settings-head">
-        <h2>Settings</h2>
+        <button class="back-btn" type="button" id="settingsBack" hidden>
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          Settings
+        </button>
+        <h2 id="settingsTitle">Settings</h2>
         <button class="close-x" value="cancel" formnovalidate aria-label="Close settings" title="Close">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>
         </button>
       </div>
       <div class="settings-body">
 
-      <h3>Every morning</h3>
-      <label class="toggle"><input type="checkbox" id="carry"> Move unfinished Tomorrow todos into Now</label>
+      <!-- Main page: everyday choices up top, sync and backups one tap away, About at the bottom. -->
+      <div class="pane" data-pane="main">
+        <section class="group" aria-labelledby="gDay">
+          <h3 id="gDay">Your day</h3>
+          <div class="card">
+            <label class="item switch-row">
+              <span class="item-text">Move unfinished Tomorrow todos into Now
+                <small>Every morning, when the day changes.</small></span>
+              <input type="checkbox" class="switch" id="carry">
+            </label>
+            <div class="item stack">
+              <span class="item-text" id="doneWhenLabel">Finished todos move to Done
+                <small>Next day keeps them in their list, checked, until tomorrow morning.</small></span>
+              <div class="choice" role="radiogroup" aria-labelledby="doneWhenLabel">
+                <label><input type="radio" name="doneWhen" id="doneLater" value="later"> Next day</label>
+                <label><input type="radio" name="doneWhen" id="doneNow" value="now"> Right away</label>
+              </div>
+            </div>
+          </div>
+        </section>
 
-      <h3>Finished todos</h3>
-      <label class="toggle"><input type="radio" name="doneWhen" id="doneLater" value="later"> Keep in their list until the next day, then move to Done</label>
-      <label class="toggle"><input type="radio" name="doneWhen" id="doneNow" value="now"> Move to Done right away</label>
+        <section class="group" aria-labelledby="gLook">
+          <h3 id="gLook">Look and feel</h3>
+          <div class="card">
+            <div class="item stack">
+              <span class="item-text" id="themeLabel">Appearance</span>
+              <div class="choice" role="radiogroup" aria-labelledby="themeLabel">
+                <label><input type="radio" name="theme" value="system"> System</label>
+                <label><input type="radio" name="theme" value="light"> Light</label>
+                <label><input type="radio" name="theme" value="dark"> Dark</label>
+              </div>
+            </div>
+            <label class="item switch-row" id="hapticsRow">
+              <span class="item-text">Buzz when picking up and dropping a todo</span>
+              <input type="checkbox" class="switch" id="haptics">
+            </label>
+            <button class="item nav kb-only" type="button" id="showKeys">
+              <span class="item-text">Keyboard shortcuts</span>
+              <span class="item-value"><kbd>?</kbd></span><svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </button>
+          </div>
+        </section>
 
-      <h3>Appearance</h3>
-      <div class="choice" role="radiogroup" aria-label="Theme">
-        <label><input type="radio" name="theme" value="system"> Match system</label>
-        <label><input type="radio" name="theme" value="light"> Light</label>
-        <label><input type="radio" name="theme" value="dark"> Dark</label>
+        <section class="group" aria-labelledby="gData">
+          <h3 id="gData">Sync and backups</h3>
+          <div class="card">
+            <button class="item nav" type="button" data-go="sync">
+              <span class="item-text">Sync <small id="syncRowSub">Off. Your lists stay on this device.</small></span><svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </button>
+            <button class="item nav" type="button" data-go="backups">
+              <span class="item-text">Backups <small id="backupRowSub">Download, restore and nightly copies.</small></span><svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </button>
+          </div>
+        </section>
+
+        <section class="group" aria-labelledby="gAbout">
+          <h3 id="gAbout">About</h3>
+          <nav class="card" aria-label="About Now and Then">
+            <a class="item nav" href="whats-new.html" id="whatsNewLink"><span class="item-text">What's New</span><span class="new-dot" id="whatsNewDot" hidden>New</span><svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></a>
+            <a class="item nav" href="support.html"><span class="item-text">Support &amp; FAQ</span><svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></a>
+            <a class="item nav" href="privacy.html"><span class="item-text">Privacy</span><svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></a>
+            <a class="item nav" href="terms.html"><span class="item-text">Terms</span><svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></a>
+          </nav>
+          <p class="version" id="versionInfo"></p>
+          <div class="row update start">
+            <span class="msg" id="updateMsg" role="status"></span>
+            <button class="btn" type="button" id="reloadApp" hidden>Reload</button>
+          </div>
+        </section>
       </div>
-      <label class="toggle" id="hapticsRow"><input type="checkbox" id="haptics"> Buzz when picking up and dropping a todo</label>
-      <div class="row kb-only" style="justify-content:flex-start;align-items:center">
-        <button class="btn" type="button" id="showKeys">Keyboard shortcuts</button>
-        <span class="msg">or press <kbd>?</kbd></span>
+
+      <!-- Sync page: connect, add devices, invite people, delete the board. -->
+      <div class="pane" data-pane="sync" data-title="Sync" hidden>
+        <section class="group">
+          <p>Open an invite link to start syncing, or paste the address of your Now and Then Worker and its access token. <a href="support.html#sync">How sync works</a>. Leave both empty to keep your lists on this device only.</p>
+          <div class="card pad">
+            <label class="field">Worker address
+              <input type="url" id="syncUrl" placeholder="https://now-and-then-sync.yourname.workers.dev" autocomplete="off" spellcheck="false">
+            </label>
+            <label class="field">Access token
+              <input type="password" id="syncToken" autocomplete="off" spellcheck="false">
+            </label>
+            <div class="row">
+              <button class="btn primary" type="button" id="saveSync">Save and sync</button>
+            </div>
+          </div>
+          <div class="msg" id="syncMsg" role="status"></div>
+        </section>
+
+        <section class="group sync-more" id="syncMore" hidden aria-labelledby="gDevices">
+          <h3 id="gDevices">Your devices</h3>
+          <p>The link connects another phone, tablet or computer to this board. Anyone who has it can open your lists, so send it only to yourself or to someone you share the board with.</p>
+          <div class="row start">
+            <button class="btn" type="button" id="deviceLink">Copy link for another device</button>
+          </div>
+        </section>
+
+        <section class="group invites" id="invites" hidden aria-labelledby="gInvites">
+          <h3 id="gInvites">Invite people</h3>
+          <p>An invite link gives someone their own board on this Worker. It works once and expires after 14 days. The note is only for you, to remember who it's for.</p>
+          <div class="row start invite-new">
+            <input type="text" id="inviteLabel" placeholder="Who it's for (optional)" maxlength="40" autocomplete="off" aria-label="Who the invite is for">
+            <button class="btn" type="button" id="inviteMake">Create invite link</button>
+          </div>
+          <ul class="invite-list" id="inviteList"></ul>
+          <div class="msg" id="inviteMsg" role="status"></div>
+        </section>
+
+        <section class="group danger-zone" id="deleteZone" hidden aria-labelledby="gDelete">
+          <h3 id="gDelete">Delete your board</h3>
+          <div class="row start">
+            <button class="btn danger" type="button" id="deleteBoard">Delete synced board…</button>
+          </div>
+          <div class="restore-box" id="deleteBox" hidden>
+            <p id="deleteWhat">This permanently deletes your board, its nightly copies and its access token from the sync service. Your other devices stop syncing. It can't be undone.</p>
+            <label class="toggle"><input type="checkbox" id="deleteLocal"> Also erase the lists on this device</label>
+            <div class="row">
+              <button class="btn" type="button" id="deleteCancel">Cancel</button>
+              <button class="btn primary danger" type="button" id="deleteGo">Delete board</button>
+            </div>
+          </div>
+        </section>
       </div>
 
-      <h3>Sync with Cloudflare</h3>
-      <p>Open an invite link to start syncing, or paste the address of your Now and Then Worker and its access token. <a href="support.html#sync">How sync works</a>. Leave both empty to keep your lists on this device only.</p>
-      <label class="field">Worker address
-        <input type="url" id="syncUrl" placeholder="https://now-and-then-sync.yourname.workers.dev" autocomplete="off" spellcheck="false">
-      </label>
-      <label class="field">Access token
-        <input type="password" id="syncToken" autocomplete="off" spellcheck="false">
-      </label>
-      <div class="msg" id="syncMsg" role="status"></div>
-      <div class="sync-more" id="syncMore" hidden>
-        <div class="row start">
-          <button class="btn" type="button" id="deviceLink">Copy link for another device</button>
+      <!-- Backups page: files on this device, and the Worker's nightly copies. -->
+      <div class="pane" data-pane="backups" data-title="Backups" hidden>
+        <section class="group" aria-labelledby="gFiles">
+          <h3 id="gFiles">On this device</h3>
+          <p>Save a copy of all your lists, including Done, to this device. Keep the backup file to restore it later. The CSV file opens in Numbers or Excel.</p>
+          <div class="row start">
+            <button class="btn" type="button" id="exportJson">Download backup</button>
+            <button class="btn" type="button" id="exportCsv">Download CSV</button>
+            <button class="btn" type="button" id="importJson">Restore from file…</button>
+            <input type="file" id="importFile" accept=".json,application/json" hidden>
+          </div>
+        </section>
+        <section class="group cloud-backups" id="cloudBackups" hidden aria-labelledby="gNightly">
+          <h3 id="gNightly">Nightly copies</h3>
+          <p id="cloudInfo">The sync Worker saves a copy of your board every night and keeps it for 30 days.</p>
+          <div class="row start">
+            <select id="snapList" aria-label="Saved copies"></select>
+            <button class="btn" type="button" id="snapRestore">Restore…</button>
+            <button class="btn" type="button" id="snapDownload">Download</button>
+          </div>
+        </section>
+        <div class="restore-box" id="restoreBox" hidden>
+          <p id="restoreWhat"></p>
+          <label class="toggle"><input type="checkbox" id="restoreReplace"> Also remove lists and todos added since this backup</label>
+          <div class="row">
+            <button class="btn" type="button" id="restoreCancel">Cancel</button>
+            <button class="btn primary" type="button" id="restoreGo">Restore</button>
+          </div>
         </div>
-        <p class="note" id="deviceNote">The link connects another phone, tablet or computer to this board. Anyone who has it can open your lists, so send it only to yourself or to someone you share the board with.</p>
-        <div class="row start">
-          <button class="btn danger" type="button" id="deleteBoard" hidden>Delete synced board…</button>
-        </div>
-      </div>
-      <div class="restore-box" id="deleteBox" hidden>
-        <p id="deleteWhat">This permanently deletes your board, its nightly copies and its access token from the sync service. Your other devices stop syncing. It can't be undone.</p>
-        <label class="toggle"><input type="checkbox" id="deleteLocal"> Also erase the lists on this device</label>
-        <div class="row">
-          <button class="btn" type="button" id="deleteCancel">Cancel</button>
-          <button class="btn primary danger" type="button" id="deleteGo">Delete board</button>
-        </div>
+        <div class="msg" id="backupMsg" role="status"></div>
       </div>
 
-      <div class="invites" id="invites" hidden>
-        <h3>Invite people</h3>
-        <p>An invite link gives someone their own board on this Worker. It works once and expires after 14 days. The note is only for you, to remember who it's for.</p>
-        <div class="row start invite-new">
-          <input type="text" id="inviteLabel" placeholder="Who it's for (optional)" maxlength="40" autocomplete="off" aria-label="Who the invite is for">
-          <button class="btn" type="button" id="inviteMake">Create invite link</button>
-        </div>
-        <ul class="invite-list" id="inviteList"></ul>
-        <div class="msg" id="inviteMsg" role="status"></div>
-      </div>
-
-      <h3>Backups</h3>
-      <p>Save a copy of all your lists, including Done, to this device. Keep the backup file to restore it later. The CSV file opens in Numbers or Excel.</p>
-      <div class="row start">
-        <button class="btn" type="button" id="exportJson">Download backup</button>
-        <button class="btn" type="button" id="exportCsv">Download CSV</button>
-        <button class="btn" type="button" id="importJson">Restore from file…</button>
-        <input type="file" id="importFile" accept=".json,application/json" hidden>
-      </div>
-      <div class="cloud-backups" id="cloudBackups" hidden>
-        <p id="cloudInfo">The sync Worker saves a copy of your board every night and keeps it for 30 days.</p>
-        <div class="row start">
-          <select id="snapList" aria-label="Saved copies"></select>
-          <button class="btn" type="button" id="snapRestore">Restore…</button>
-          <button class="btn" type="button" id="snapDownload">Download</button>
-        </div>
-      </div>
-      <div class="restore-box" id="restoreBox" hidden>
-        <p id="restoreWhat"></p>
-        <label class="toggle"><input type="checkbox" id="restoreReplace"> Also remove lists and todos added since this backup</label>
-        <div class="row">
-          <button class="btn" type="button" id="restoreCancel">Cancel</button>
-          <button class="btn primary" type="button" id="restoreGo">Restore</button>
-        </div>
-      </div>
-      <div class="msg" id="backupMsg" role="status"></div>
-
-      <h3>About</h3>
-      <p class="version" id="versionInfo"></p>
-      <div class="row update" style="justify-content:flex-start">
-        <span class="msg" id="updateMsg" role="status"></span>
-        <button class="btn" type="button" id="reloadApp" hidden>Reload</button>
-      </div>
-      <nav class="info-links" aria-label="About Now and Then">
-        <a href="whats-new.html" id="whatsNewLink">What's New<span class="new-dot" id="whatsNewDot" hidden>New</span></a>
-        <a href="support.html">Support &amp; FAQ</a>
-        <a href="privacy.html">Privacy</a>
-        <a href="terms.html">Terms</a>
-      </nav>
-
-      <div class="row">
-        <button class="btn" value="cancel" formnovalidate>Close</button>
-        <button class="btn primary" type="button" id="saveSync">Save and sync</button>
-      </div>
       </div>
     </form>
   </dialog>

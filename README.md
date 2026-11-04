@@ -12,7 +12,7 @@ A notebook-style todo list, made for Tiffany. It works the way her paper noteboo
 - Dark mode follows the system, or pick Light or Dark per device in Settings. Phones give a small buzz when a todo is picked up and dropped (Android, and iPhone on iOS 18 or later).
 - On a Mac, keyboard shortcuts cover adding, moving and checking off todos. Press **?** to see them.
 - Sync starts from an **invite link**: open it, tap **Join**, and that person has their own synced board. **Copy link for another device** in Settings adds a phone, tablet or computer to the same board, and **Delete synced board…** removes the board and its backups from the Worker.
-- The bottom of Settings links to **What's New**, **Support & FAQ**, **Privacy** and **Terms**. What's New is marked *New* after an update until it's opened.
+- Settings is grouped into Your day, Look and feel, Sync and backups (each its own page) and About. About links to **What's New**, **Support & FAQ**, **Privacy** and **Terms**. What's New is marked *New* after an update until it's opened.
 
 It's a progressive web app: open it in Safari or Chrome and choose **Add to Home Screen** to install it. It works offline, and syncs through a small Cloudflare Worker when one is set up.
 
@@ -77,7 +77,7 @@ Open the app, tap **Settings**, and paste the Worker address and that person's t
 
 ## Invites
 
-Owners listed in `ADMINS` in `worker/wrangler.toml` (now `nate`) see **Invite people** in Settings. **Create invite link** asks the Worker for a one-time code and shares a link like `https://tweetingbirds.com/now-and-then/#join=<code>&sync=<worker address>`. The code and the Worker address sit after the `#`, so GitHub Pages never sees them.
+Owners listed in `ADMINS` in `worker/wrangler.toml` (now `nate`) see **Invite people** in Settings → Sync. **Create invite link** asks the Worker for a one-time code and shares a link like `https://tweetingbirds.com/now-and-then/#join=<code>&sync=<worker address>`. The code and the Worker address sit after the `#`, so GitHub Pages never sees them.
 
 Opening the link shows **Join Now and Then sync**, with an optional name for the board and the Worker's host name. **Join** calls `POST /join`, which deletes the invite, makes a new board and a new token, and returns the token once. The app saves it like a pasted token and uploads the lists already on that device. Invites expire after 14 days (up to 30) and Settings lists open ones with **Revoke**. The note on an invite ("Mom") is only for the person inviting; it's stored with the board so `GET /boards` can say who is who.
 
