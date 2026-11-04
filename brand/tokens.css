@@ -1,0 +1,17 @@
+/* Now and Then brand tokens, generated from brand/tokens.json by hand.
+   app/styles.css uses its own short names (--bg, --surface, --muted, --accent…) for the same values. */
+:root {
+  --nt-ballpoint: #2f5bd3; --nt-margin: #d9534f; --nt-marigold: #f2b84b;
+  --nt-desk: #eef0f3; --nt-page: #fbfcfd; --nt-ink: #1d2430; --nt-pencil: #56616f; --nt-rule: #cfd8e3; --nt-edge: #dde3ea;
+  --nt-delete: #c0392b; --nt-synced: #3aa76d; --nt-waiting: #e0a030;
+  --nt-font-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --nt-font-ui: "Atkinson Hyperlegible", system-ui, -apple-system, sans-serif;
+  --nt-font-hand: "Kalam", "Bradley Hand", "Segoe Print", cursive;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --nt-ballpoint: #7fa2ff; --nt-margin: #e2706c;
+    --nt-desk: #12161c; --nt-page: #1b2129; --nt-ink: #e8edf3; --nt-pencil: #adb7c3; --nt-rule: #2c3540; --nt-edge: #2a323c;
+    --nt-delete: #e2706c;
+  }
+}
