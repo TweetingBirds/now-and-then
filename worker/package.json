@@ -1,0 +1,8 @@
+{
+  "name": "now-and-then-sync",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/worker.test.mjs"
+  }
+}

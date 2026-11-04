@@ -11,3 +11,11 @@ id = "a8d1b6c4b4d243c2a05227906287293a"
 # 09:00 UTC is the middle of the night in the US.
 [triggers]
 crons = ["0 9 * * *"]
+
+# Plain settings (not secrets), deployed with the code.
+# ADMINS: owner names (TOKEN_<NAME>, lowercased) who may create invites in the app.
+# MAX_BOARDS: the most invited boards this Worker will hold, to stay well inside
+# Workers KV's free tier. Raise it if you need more (see "Costs and limits" in the README).
+[vars]
+ADMINS = "nate"
+MAX_BOARDS = "50"

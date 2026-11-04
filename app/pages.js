@@ -8,3 +8,13 @@
     if (history.length > 1 && (ref === app || ref === app + "index.html")) { e.preventDefault(); history.back(); }
   });
 })();
+
+// Open the FAQ answer a link points at, e.g. support.html#sync.
+(function () {
+  function openTarget() {
+    var t = location.hash && document.getElementById(location.hash.slice(1));
+    if (t && t.tagName === "DETAILS") t.open = true;
+  }
+  openTarget();
+  window.addEventListener("hashchange", openTarget);
+})();
