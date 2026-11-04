@@ -7,6 +7,7 @@ A notebook-style todo list, made for Tiffany. It works the way her paper noteboo
 - Each morning, unfinished Tomorrow todos move into Now (this can be turned off in Settings).
 - Lists can be renamed, recolored, reordered and added, up to 10.
 - Todos move between lists by dragging the ⋮⋮ handle, or with the ••• menu.
+- **Done** can be searched and filtered by when a todo was finished (today, this week, this month) and which list it came from. The ↩ button on a finished todo puts it back, unchecked, on its list.
 
 It's a progressive web app: open it in Safari or Chrome and choose **Add to Home Screen** to install it. It works offline, and syncs through a small Cloudflare Worker when one is set up.
 
