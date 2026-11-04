@@ -9,6 +9,8 @@ A notebook-style todo list, made for Tiffany. It works the way her paper noteboo
 - Todos move between lists by dragging the ⋮⋮ handle, or with the ••• menu.
 - Deleting, moving or checking off a todo (or deleting a list, or putting a todo back from Done) shows a toast with **Undo** for a few seconds. Cmd+Z or Ctrl+Z works too while it's showing. Undo syncs like any other edit.
 - **Done** can be searched and filtered by when a todo was finished (today, this week, this month) and which list it came from. The ↩ button on a finished todo puts it back, unchecked, on its list.
+- Dark mode follows the system, or pick Light or Dark per device in Settings. Phones give a small buzz when a todo is picked up and dropped (Android, and iPhone on iOS 18 or later).
+- On a Mac, keyboard shortcuts cover adding, moving and checking off todos. Press **?** to see them.
 
 It's a progressive web app: open it in Safari or Chrome and choose **Add to Home Screen** to install it. It works offline, and syncs through a small Cloudflare Worker when one is set up.
 
