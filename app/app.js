@@ -14,6 +14,7 @@
 
   const BOARD_KEY = "nat.board.v1";
   const LOCAL_KEY = "nat.local.v1"; // per-device: lastDay, sync settings
+  const SYNCED_KEY = "nat.synced.v1"; // per-device: updatedAt of each item as the Worker last had it
   const MAX_LISTS = 10;
   const TOMBSTONE_DAYS = 60;
   const PALETTE = ["#f2b84b", "#7b9cff", "#9b8cf0", "#5cc6a7", "#f28b82", "#f6a6cf", "#8ecae6", "#b5d16b", "#c9a27e", "#ff9f5a", "#7fd1d8", "#a3a9b5"];
@@ -27,6 +28,12 @@
   let local = Object.assign({ lastDay: null, syncUrl: "", syncToken: "", pristine: false, synced: false, board: "", switching: false, otherBoard: "" }, read(LOCAL_KEY) || {});
   let board = read(BOARD_KEY);
   if (!board) { board = starterBoard(); local.pristine = true; write(LOCAL_KEY, local); }
+  // What the Worker last confirmed it has, as { lists: {id: updatedAt}, todos: {...}, settings }.
+  // Anything on this device that is newer hasn't reached the Worker yet. A device that
+  // synced before this was tracked starts from its current board, so an upgrade
+  // doesn't report every todo as unsynced.
+  let serverSeen = read(SYNCED_KEY);
+  if (!serverSeen) { serverSeen = local.synced ? stampsOf(board) : { lists: {}, todos: {}, settings: 0 }; write(SYNCED_KEY, serverSeen); }
 
   function starterBoard() {
     const t = now();
@@ -147,31 +154,140 @@
   function syncConfigured() { return !!(local.syncUrl && local.syncToken); }
   function dataUrl() { return local.syncUrl.replace(/\/+$/, "") + "/data"; }
 
-  function setStatus(state, label) {
-    const s = document.getElementById("syncStatus");
-    s.dataset.state = state; s.textContent = label;
+  // ---------- sync status ----------
+  // The badge in the header always says whether this device's edits have reached
+  // the Worker, and which board it syncs with, so a wrong token or a dropped
+  // connection is visible instead of silent.
+  let syncError = "";   // last error from the Worker, cleared by the next good sync
+  let netDown = false;  // the last request couldn't reach the Worker at all
+
+  function stampsOf(b) {
+    const m = xs => Object.fromEntries((xs || []).map(i => [i.id, i.updatedAt || 0]));
+    return { lists: m(b.lists), todos: m(b.todos), settings: (b.settings && b.settings.updatedAt) || 0 };
   }
-  function idleStatus() {
-    if (!syncConfigured()) setStatus("off", "On this device");
-    else if (!navigator.onLine) setStatus("error", "Offline, will sync later");
-    else setStatus("ok", "Synced");
+  function rememberServer(remote) { serverSeen = stampsOf(remote); write(SYNCED_KEY, serverSeen); }
+  const isPending = (kind, i) => kind in serverSeen && (i.id in serverSeen[kind] ? (i.updatedAt || 0) > serverSeen[kind][i.id] : !i.deleted);
+  // Lists, todos and settings edited here since the Worker last confirmed them.
+  function pendingChanges() {
+    if (!syncConfigured()) return [];
+    const out = [];
+    for (const l of board.lists) if (isPending("lists", l)) out.push(l);
+    for (const t of board.todos) if (isPending("todos", t)) out.push(t);
+    if (((board.settings && board.settings.updatedAt) || 0) > (serverSeen.settings || 0)) out.push(board.settings);
+    return out;
+  }
+  const pendingTodoIds = () => new Set(syncConfigured() ? board.todos.filter(t => isPending("todos", t)).map(t => t.id) : []);
+
+  const firstName = (name) => name ? name.charAt(0).toUpperCase() + name.slice(1) : "";
+  // "nate" -> "Nate's board"
+  const boardLabel = (name) => name ? firstName(name) + "'s board" : "your board";
+  const clock = (ms) => new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  function lastSyncedText() {
+    if (!local.lastSyncAt) return "Not synced yet";
+    const d = new Date(local.lastSyncAt), today = new Date();
+    return "Last synced " + (d.toDateString() === today.toDateString() ? "at " + clock(d) :
+      d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + ", " + clock(d));
+  }
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+  function syncState() {
+    if (!syncConfigured()) return "off";
+    if (local.otherBoard || syncError) return "error";
+    if (!navigator.onLine || netDown) return "offline";
+    if (syncing || pushTimer) return "busy";
+    return pendingChanges().length ? "pending" : "ok";
+  }
+  function showStatus() {
+    const s = document.getElementById("syncStatus");
+    const state = syncState(), n = pendingChanges().length, who = firstName(local.board);
+    const unsynced = n ? ` · ${n} unsynced` : "";
+    const label = {
+      off: "On this device",
+      error: "Sync problem" + unsynced,
+      offline: "Offline" + unsynced,
+      busy: "Syncing…",
+      pending: `${n} unsynced`,
+      ok: who ? `Synced · ${who}` : "Synced",
+    }[state];
+    s.dataset.state = state; s.textContent = label;
+    document.body.dataset.sync = state;
+    const lines = [];
+    if (state === "off") lines.push("Lists are kept on this device only. Tap to set up sync.");
+    else {
+      if (local.board) lines.push(`Syncing with ${boardLabel(local.board)}.`);
+      lines.push(lastSyncedText() + ".");
+      if (n) lines.push(`${plural(n, "change")} saved here, not yet on the Worker.`);
+      if (syncError) lines.push(syncError);
+    }
+    s.title = lines.join(" ");
+    s.setAttribute("aria-label", label + ". " + lines.join(" "));
+  }
+  // Kept for the call sites that only want the badge refreshed.
+  const idleStatus = showStatus;
+
+  // fetch() rejects with a TypeError when the Worker can't be reached at all (no
+  // signal, captive Wi-Fi, DNS). That is "offline", not a sync problem.
+  function syncFailed(e) {
+    if (e instanceof TypeError) { netDown = true; syncError = ""; }
+    else { netDown = false; syncError = e.message || String(e); }
+    showStatus();
+    return syncError || "Couldn't reach the Worker. Check the connection and try again.";
+  }
+  function syncSucceeded() {
+    netDown = false; syncError = "";
+    local.lastSyncAt = Date.now(); write(LOCAL_KEY, local);
   }
 
-  // "nate" -> "Nate's board"
-  const boardLabel = (name) => name ? name.charAt(0).toUpperCase() + name.slice(1) + "'s board" : "your board";
+  // ---------- conflict hints ----------
+  // Before merging the Worker's board in, find edits made here that are about to be
+  // replaced by a newer edit from another device: the item changed on this device
+  // since the last sync, and the Worker's copy also changed since then and is newer.
+  function lostEdits(remote) {
+    const out = [];
+    const check = (kind, mine, theirs) => {
+      const byId = new Map(mine.map(i => [i.id, i]));
+      for (const r of theirs || []) {
+        const m = byId.get(r.id);
+        if (!m || !isPending(kind, m)) continue;
+        const seen = serverSeen[kind][r.id] || 0;
+        if ((r.updatedAt || 0) > seen && (r.updatedAt || 0) > (m.updatedAt || 0)) out.push({ kind, mine: m, theirs: r });
+      }
+    };
+    check("lists", board.lists, remote.lists);
+    check("todos", board.todos, remote.todos);
+    return out;
+  }
+  let hintedAt = 0;
+  function hintConflicts(lost) {
+    if (!lost.length) return;
+    hintedAt = Date.now();
+    if (lost.length > 1) {
+      toast(`${plural(lost.length, "edit")} on this device were replaced by newer changes from another device.`, 6000);
+      return;
+    }
+    const { kind, mine, theirs } = lost[0];
+    const name = kind === "lists" ? `The ${theirs.name || mine.name} list` : `“${short(theirs.text || mine.text)}”`;
+    let msg;
+    if (theirs.deleted) msg = `${name} was deleted on another device.`;
+    else if (mine.deleted) msg = `${name} was changed on another device, so it's back.`;
+    else msg = `${name} was also changed on another device. The newer version was kept.`;
+    toast(msg, 6000);
+  }
+  const short = (text = "") => text.length > 40 ? text.slice(0, 38).trimEnd() + "…" : text;
 
   function schedulePush() {
     if (!syncConfigured()) return;
     clearTimeout(pushTimer);
     pushTimer = setTimeout(() => { pushTimer = null; sync(); }, 1200);
+    showStatus();
   }
 
   // Send our board; the Worker merges it with what it has and returns the result.
   async function sync() {
     if (!syncConfigured()) return;
     if (syncing) { again = true; return; }
-    if (!navigator.onLine) { idleStatus(); return; }
-    syncing = true; setStatus("busy", "Syncing…");
+    if (!navigator.onLine) { showStatus(); return "You're offline. Changes are saved on this device and will sync when you're back online."; }
+    syncing = true; showStatus();
     try {
       // First sync on a device that still has only the welcome todos, or that is
       // switching from one person's board to another's: take the saved board as is,
@@ -182,7 +298,7 @@
         if (got.status === 409) throw new Error(await clashMessage(got));
         if (!got.ok) throw new Error("The Worker answered " + got.status + ".");
         const remote = await got.json();
-        if (remote.lists && remote.lists.some(l => !l.deleted)) board = remote;
+        if (remote.lists && remote.lists.some(l => !l.deleted)) { board = remote; rememberServer(remote); }
       }
       const headers = { "Authorization": "Bearer " + local.syncToken, "Content-Type": "application/json" };
       if (local.board) headers["X-Expect-Board"] = local.board;
@@ -193,21 +309,23 @@
       const merged = await res.json();
       local.board = res.headers.get("X-Board") || local.board;
       local.switching = false; local.otherBoard = "";
+      const lost = local.synced ? lostEdits(merged) : [];
       // Edits made while the request was in flight are newer, so they survive the merge.
       board = mergeBoards(board, merged);
+      rememberServer(merged);
       local.synced = true; lastPull = Date.now(); write(LOCAL_KEY, local);
+      syncSucceeded();
       repairOrphans();
       write(BOARD_KEY, board);
       if (!isBusyEditing()) render();
-      idleStatus();
+      hintConflicts(lost);
       return true;
     } catch (e) {
-      setStatus("error", "Sync problem");
-      document.getElementById("syncStatus").title = e.message || String(e);
-      return e.message || String(e);
+      return syncFailed(e);
     } finally {
       syncing = false;
       if (again) { again = false; schedulePush(); }
+      showStatus();
     }
   }
   // The Worker answers 409 instead of merging when the token opens a different
@@ -247,22 +365,25 @@
           `If that's a mistake, fix the token in the Worker. If it's what you want, tap Save and sync to switch this device to ${boardLabel(who)}.`);
       }
       const remote = await res.json();
+      syncSucceeded();
       // Someone may have started typing or dragging while the request was out.
       if (pushTimer || busyForPull()) return;
+      const lost = lostEdits(remote);
       const before = JSON.stringify(board);
       board = mergeBoards(board, remote);
+      rememberServer(remote);
       repairOrphans();
       const after = JSON.stringify(board);
       if (after !== before) { write(BOARD_KEY, board); render(); }
+      hintConflicts(lost);
       // This device had edits the saved board lacks (say a push failed): send them.
       if (hasNewer(board, remote)) schedulePush();
-      idleStatus();
     } catch (e) {
-      setStatus("error", "Sync problem");
-      document.getElementById("syncStatus").title = e.message || String(e);
+      syncFailed(e);
     } finally {
       syncing = false;
       if (again) { again = false; schedulePush(); }
+      showStatus();
     }
   }
   // True when a has a list, todo or settings edit that b doesn't.
@@ -311,12 +432,14 @@
   document.addEventListener("scroll", e => { if (openPop && !openPop.contains(e.target)) closePop(); }, true);
   window.addEventListener("resize", () => closePop());
 
+  let unsyncedIds = new Set();
   function render() {
     const scroll = boardEl.scrollLeft;
     const focusedId = document.activeElement?.id;
     closePop();
     document.getElementById("today").textContent = pretty(todayKey());
     const ls = lists();
+    unsyncedIds = pendingTodoIds();
     boardEl.replaceChildren();
     ls.forEach(l => boardEl.append(renderList(l)));
     const full = ls.length >= MAX_LISTS;
@@ -357,7 +480,7 @@
   }
 
   function renderTodo(t) {
-    const row = el("div", { class: "todo" + (t.done ? " done" : ""), "data-id": t.id });
+    const row = el("div", { class: "todo" + (t.done ? " done" : "") + (unsyncedIds.has(t.id) ? " unsynced" : ""), "data-id": t.id });
     const text = el("div", { class: "text", ondblclick: () => editText(text, t) }, t.text);
     row.append(
       el("button", { class: "grip", "aria-label": "Drag to move", title: "Drag to move", onpointerdown: e => startDrag(e, t, row) }, "⋮⋮"),
@@ -368,6 +491,7 @@
         if (t.done) toast("Nice. It moves to Done tomorrow morning.");
       } }),
       text,
+      el("span", { class: "unsynced-dot", title: "Not synced yet", "aria-label": "Not synced yet" }),
       el("button", { class: "icon-btn more", "aria-label": "Todo options", "aria-expanded": "false", "data-pop-trigger": true, onclick: e => todoPop(e, t, row, text) }, "•••"),
     );
     return row;
@@ -736,9 +860,9 @@
 
   // ---------- toast ----------
   let toastTimer;
-  function toast(msg) {
+  function toast(msg, ms = 2400) {
     const t = document.getElementById("toast"); t.textContent = msg; t.hidden = false;
-    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2400);
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, ms);
   }
 
   // ---------- settings ----------
@@ -749,16 +873,33 @@
     document.getElementById("syncUrl").value = local.syncUrl;
     document.getElementById("syncToken").value = local.syncToken;
     const sm = document.getElementById("syncMsg");
-    if (local.otherBoard) { sm.className = "msg bad"; sm.textContent = document.getElementById("syncStatus").title; }
-    else { sm.className = "msg"; sm.textContent = syncConfigured() && local.board ? `Syncing with ${boardLabel(local.board)}.` : ""; }
+    if (local.otherBoard || syncError) { sm.className = "msg bad"; sm.textContent = syncError || "This device's token now opens a different board. Nothing was synced."; }
+    else { sm.className = "msg"; sm.textContent = syncSummary(); }
     showVersion();
     closeRestore(); backupMsg(""); loadSnapshots();
     dlg.showModal();
     dlg.querySelector(".settings-body").scrollTop = 0;
     checkForUpdate();
   });
-  document.getElementById("syncStatus").addEventListener("click", () => {
-    if (syncConfigured()) sync(); else document.getElementById("openSettings").click();
+  function syncSummary() {
+    if (!syncConfigured()) return "";
+    const n = pendingChanges().length;
+    return [local.board ? `Syncing with ${boardLabel(local.board)}.` : "", lastSyncedText() + ".",
+      n ? `${plural(n, "change")} on this device ${n === 1 ? "hasn't" : "haven't"} synced yet.` : ""].filter(Boolean).join(" ");
+  }
+  // Tapping the badge syncs now. On a phone there's no hover, so it also says what's wrong.
+  document.getElementById("syncStatus").addEventListener("click", async () => {
+    if (!syncConfigured()) { document.getElementById("openSettings").click(); return; }
+    const state = syncState(), n = pendingChanges().length;
+    if (state === "error" && local.otherBoard) { document.getElementById("openSettings").click(); return; }
+    if (state === "offline" && !navigator.onLine) {
+      toast(n ? `You're offline. ${plural(n, "change")} saved on this device will sync when you're back online.` : "You're offline. Changes will sync when you're back online.", 5000);
+      return;
+    }
+    const asked = Date.now();
+    const result = await sync();
+    if (result === true && hintedAt < asked) toast(`Synced with ${boardLabel(local.board)}.`);
+    else if (typeof result === "string") toast(result, 6000);
   });
   document.getElementById("carry").addEventListener("change", e => {
     board.settings = Object.assign({}, board.settings, { carry: e.target.checked, updatedAt: now() }); commit();
@@ -780,9 +921,10 @@
       local.synced = false;
       if (local.board) { local.switching = true; local.board = ""; }
       local.otherBoard = "";
+      rememberServer({ lists: [], todos: [], settings: {} });
     }
     local.syncUrl = url; local.syncToken = token; write(LOCAL_KEY, local);
-    if (!url) { msg.className = "msg"; msg.textContent = "Sync is off. Lists stay on this device."; idleStatus(); return; }
+    if (!url) { msg.className = "msg"; msg.textContent = "Sync is off. Lists stay on this device."; syncError = ""; netDown = false; idleStatus(); render(); return; }
     msg.className = "msg"; msg.textContent = "Connecting…";
     const result = await sync();
     if (result === true) { msg.textContent = `Connected to ${boardLabel(local.board)}. Your lists are synced.`; render(); setTimeout(() => dlg.close(), 1400); }

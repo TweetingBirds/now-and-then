@@ -265,6 +265,21 @@ body { margin: 0; padding-top: env(safe-area-inset-top, 0px); padding-bottom: en
 .sync[data-state="ok"]::before { background: #3aa76d; }
 .sync[data-state="busy"]::before { background: var(--accent); }
 .sync[data-state="error"]::before { background: var(--margin); }
+.sync[data-state="offline"]::before, .sync[data-state="pending"]::before { background: #e0a030; }
+.sync[data-state="error"] { color: var(--margin); border-color: color-mix(in oklab, var(--margin) 45%, var(--line)); }
+.sync[data-state="busy"]::before { animation: pulse 1s ease-in-out infinite alternate; }
+@keyframes pulse { to { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .sync[data-state="busy"]::before { animation: none; } }
+.sync { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Todos edited here that haven't reached the Worker yet. Only shown while
+   offline or failing, so a normal save doesn't flash a dot on every edit. */
+.unsynced-dot { display: none; flex: none; width: 8px; height: 8px; margin-top: 8px; border-radius: 50%;
+  border: 2px solid #e0a030; background: transparent; }
+body[data-sync="offline"] .todo.unsynced .unsynced-dot,
+body[data-sync="error"] .todo.unsynced .unsynced-dot,
+body[data-sync="pending"] .todo.unsynced .unsynced-dot { display: block; }
+.toast { max-width: calc(100vw - 32px); width: max-content; text-align: center; border-radius: 18px; }
 
 dialog.settings {
   border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink);
