@@ -313,8 +313,8 @@ body:has(dialog.settings[open]) { overflow: hidden; }
   border: none; background: transparent; border-radius: 10px; color: var(--muted);
 }
 .settings .close-x:hover { background: color-mix(in oklab, var(--ink) 8%, transparent); color: var(--ink); }
-.settings h2 { font-family: var(--font-display); margin: 0; font-size: 1.3rem; }
-.settings h3 { font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 6px 0 0; }
+.settings h2 { font-family: var(--font-display); margin: 0; font-size: 1.3rem; flex: 1; min-width: 0; }
+.settings h3 { font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0; padding-left: 2px; }
 .settings p { margin: 0; color: var(--muted); font-size: .88rem; }
 .settings label.field { display: flex; flex-direction: column; gap: 4px; font-size: .88rem; font-weight: 700; }
 .settings input[type="url"], .settings input[type="password"], .settings input[type="text"] {
@@ -331,8 +331,7 @@ body:has(dialog.settings[open]) { overflow: hidden; }
   display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px;
   background: color-mix(in oklab, var(--margin) 7%, var(--surface));
 }
-.settings .restore-box[hidden], .settings .cloud-backups[hidden], .settings .sync-more[hidden], .settings .invites[hidden] { display: none; }
-.settings .sync-more, .settings .invites { display: flex; flex-direction: column; gap: 8px; }
+.settings .restore-box[hidden] { display: none; }
 .settings p.note { font-size: .8rem; }
 .settings p a { color: var(--accent); }
 .settings .btn.danger { color: var(--margin); }
@@ -351,13 +350,64 @@ body:has(dialog.settings[open]) { overflow: hidden; }
 .settings .version { font-variant-numeric: tabular-nums; }
 .settings .row.update { align-items: center; }
 .settings .row.update .msg:empty { display: none; }
-.settings .info-links { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: .88rem; }
-.settings .info-links a { color: var(--accent); display: inline-flex; align-items: center; gap: 6px; min-height: 32px; }
 .settings .new-dot {
   font-size: .68rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
   color: var(--surface); background: var(--margin); border-radius: 999px; padding: 1px 7px;
 }
 .settings .new-dot[hidden] { display: none; }
+/* The badge is its own signal: no link underline under it. */
+.settings a .new-dot, .settings a:has(.new-dot) { text-decoration: none; }
+
+/* ---------- Settings layout: grouped cards, with Sync and Backups as sub-pages ---------- */
+.settings .pane { display: flex; flex-direction: column; gap: 22px; }
+.settings .pane[hidden], .settings .group[hidden], .settings .item[hidden] { display: none; }
+.settings .group { display: flex; flex-direction: column; gap: 8px; }
+.settings .card {
+  display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface); overflow: hidden;
+}
+/* Settings pages sit on the desk color, so their cards read as index cards. */
+dialog.settings#settings .settings-body { background: var(--bg); }
+.settings .card.pad { padding: 14px; gap: 12px; }
+.settings .item {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 10px 14px;
+  border: 0; background: transparent; color: var(--ink); text-align: left; text-decoration: none;
+  font-size: .92rem; border-radius: 0;
+}
+.settings .card > .item + .item { border-top: 1px solid var(--line); }
+.settings .item.stack { flex-direction: column; align-items: stretch; gap: 10px; padding-block: 12px; }
+.settings .item-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.settings .item-text small { color: var(--muted); font-size: .8rem; }
+.settings .item-text small.bad { color: var(--margin); }
+.settings .item-value { color: var(--muted); }
+.settings .item .chev { flex: none; color: var(--muted); }
+.settings .item.nav { cursor: pointer; }
+.settings .item.nav:hover { background: color-mix(in oklab, var(--ink) 5%, transparent); }
+.settings .item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.settings .switch-row { cursor: pointer; }
+/* An on/off switch, in Ballpoint when on. */
+.settings .switch {
+  appearance: none; -webkit-appearance: none; flex: none; position: relative; margin: 0;
+  width: 46px; height: 28px; border-radius: 999px; background: var(--rule); cursor: pointer;
+  transition: background-color .18s ease;
+}
+.settings .switch::before {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / .25); transition: transform .18s ease;
+}
+.settings .switch:checked { background: var(--accent); }
+.settings .switch:checked::before { transform: translateX(18px); }
+.settings .switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .settings .switch, .settings .switch::before { transition: none; } }
+.settings .back-btn {
+  flex: none; display: inline-flex; align-items: center; gap: 2px; min-height: 44px; padding: 0 10px 0 2px;
+  margin-left: -12px; border: 0; background: transparent; color: var(--accent); font-size: .95rem; border-radius: 10px;
+}
+.settings .back-btn[hidden] { display: none; }
+.settings .back-btn:hover { background: color-mix(in oklab, var(--accent) 10%, transparent); }
+dialog.settings.sub h2 { font-size: 1.1rem; }
+.settings .version { font-size: .8rem; padding-left: 2px; }
+.settings .danger-zone h3 { color: var(--margin); }
 
 /* ---------- Appearance, haptics and keyboard shortcuts ---------- */
 /* Theme picker: a three-way segmented control. */
@@ -365,7 +415,7 @@ body:has(dialog.settings[open]) { overflow: hidden; }
   display: flex; border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 3px; background: var(--bg);
 }
 .settings .choice label {
-  flex: 1; text-align: center; padding: 7px 6px; border-radius: 7px; font-size: .88rem; color: var(--muted); cursor: pointer;
+  flex: 1; white-space: nowrap; text-align: center; padding: 7px 6px; border-radius: 7px; font-size: .88rem; color: var(--muted); cursor: pointer;
 }
 .settings .choice input { position: absolute; opacity: 0; pointer-events: none; }
 .settings .choice label:has(input:checked) { background: var(--surface); color: var(--ink); font-weight: 700; box-shadow: var(--shadow); }

@@ -6,7 +6,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.8.0";
+  const APP_VERSION = "1.9.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -969,10 +969,40 @@
     else { sm.className = "msg"; sm.textContent = syncSummary(); }
     showVersion();
     closeRestore(); backupMsg(""); loadSnapshots(); showSyncMore(); inviteMsg("");
+    showSyncRow(); showPane("main");
     dlg.showModal();
-    dlg.querySelector(".settings-body").scrollTop = 0;
     checkForUpdate();
   });
+  // Settings has a main page and two sub-pages (Sync, Backups) in the same sheet.
+  // The header swaps its title for a back button on a sub-page; Esc goes back first.
+  const settingsTitle = document.getElementById("settingsTitle"), settingsBack = document.getElementById("settingsBack");
+  let pane = "main";
+  function showPane(name, from) {
+    pane = name;
+    dlg.querySelectorAll(".pane").forEach(p => { p.hidden = p.dataset.pane !== name; });
+    const sub = dlg.querySelector(`.pane[data-pane="${name}"]`);
+    settingsTitle.textContent = name === "main" ? "Settings" : sub.dataset.title;
+    settingsBack.hidden = name === "main";
+    dlg.classList.toggle("sub", name !== "main");
+    dlg.querySelector(".settings-body").scrollTop = 0;
+    if (name === "main") { showSyncRow(); if (from) dlg.querySelector(`[data-go="${from}"]`)?.focus(); }
+    else if (dlg.open) settingsBack.focus();
+  }
+  dlg.querySelectorAll("[data-go]").forEach(b => b.addEventListener("click", () => showPane(b.dataset.go)));
+  settingsBack.addEventListener("click", () => showPane("main", pane));
+  dlg.addEventListener("cancel", e => { if (pane !== "main") { e.preventDefault(); showPane("main", pane); } });
+  // Opens Settings straight to a sub-page, e.g. from the sync badge.
+  function openSettingsTo(name) { document.getElementById("openSettings").click(); showPane(name); }
+  // The Sync row on the main page says where things stand without opening it.
+  function showSyncRow() {
+    const sub = document.getElementById("syncRowSub"), state = syncState();
+    sub.classList.toggle("bad", state === "error");
+    if (state === "off") sub.textContent = "Off. Your lists stay on this device.";
+    else if (state === "error") sub.textContent = "Needs a look. " + (local.otherBoard ? "This token opens a different board." : "The Worker refused the last sync.");
+    else sub.textContent = [local.board ? boardLabel(local.board).replace(/^./, c => c.toUpperCase()) : "", state === "offline" ? "Offline" : lastSyncedText()].filter(Boolean).join(" · ");
+    document.getElementById("backupRowSub").textContent = syncConfigured() && local.synced
+      ? "Download, restore and nightly copies." : "Download or restore a backup file.";
+  }
   function syncSummary() {
     if (!syncConfigured()) return "";
     const n = pendingChanges().length;
@@ -981,9 +1011,9 @@
   }
   // Tapping the badge syncs now. On a phone there's no hover, so it also says what's wrong.
   document.getElementById("syncStatus").addEventListener("click", async () => {
-    if (!syncConfigured()) { document.getElementById("openSettings").click(); return; }
+    if (!syncConfigured()) { openSettingsTo("sync"); return; }
     const state = syncState(), n = pendingChanges().length;
-    if (state === "error" && local.otherBoard) { document.getElementById("openSettings").click(); return; }
+    if (state === "error" && local.otherBoard) { openSettingsTo("sync"); return; }
     if (state === "offline" && !navigator.onLine) {
       toast(n ? `You're offline. ${plural(n, "change")} saved on this device will sync when you're back online.` : "You're offline. Changes will sync when you're back online.", 5000);
       return;
@@ -1039,7 +1069,7 @@
   function showSyncMore() {
     const on = syncConfigured() && local.synced && !local.otherBoard;
     document.getElementById("syncMore").hidden = !on;
-    document.getElementById("deleteBoard").hidden = !(on && local.boardKind === "invited");
+    document.getElementById("deleteZone").hidden = !(on && local.boardKind === "invited");
     document.getElementById("deleteBox").hidden = true;
     document.getElementById("invites").hidden = !(on && local.admin);
     if (on && local.admin) loadInvites();
