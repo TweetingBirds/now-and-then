@@ -24,7 +24,7 @@ It's a progressive web app: open it in Safari or Chrome and choose **Add to Home
 | --- | --- |
 | `app/` | The web app: plain HTML, CSS and JavaScript, no build step. Deployed to GitHub Pages. |
 | `app/whats-new.html`, `support.html`, `privacy.html`, `terms.html` | Info pages. Each stands on its own (`pages.css`, `pages.js`), so the Support and Privacy URLs can also go on an App Store listing. Add a card to What's New whenever `APP_VERSION` is bumped. |
-| `app/sw.js` | Service worker for offline use. Its cache name is stamped with the build on each deploy. |
+| `app/sw.js` | Service worker for offline use. Its cache name is stamped with the build on each deploy. It waits 3 seconds for the network before falling back to the saved copy, and keeps fonts in their own cache (`nat-fonts-v1`) across deploys. |
 | `worker/` | Cloudflare Worker that stores each person's board in Workers KV. Tests: `npm test` in `worker/` (they also run before every deploy). |
 | `docs/self-hosting.md` | How anyone can run their own sync Worker on Cloudflare's free plan. Linked from Support. |
 | `scripts/check.sh` | Fast checks: `node --check` on every script, the Worker tests, and that `APP_VERSION` matches the *Latest* card on What's New. Runs on every pull request (`.github/workflows/checks.yml`) and before each Pages deploy. |
@@ -84,7 +84,7 @@ Every token must be different. If two `TOKEN_*` secrets hold the same value the 
 
 ### 3. Connect each phone
 
-Open the app, tap **Settings**, and paste the Worker address and that person's token, then **Save and sync**. The first sync on a new device loads the saved board. The badge at the top stays hidden while sync is fine, and shows **Offline** or **Sync problem** (tap it to retry) when something needs attention.
+Open the app, tap **Settings** → **Sync** → **Set up by hand**, and paste the Worker address and that person's token, then **Save and sync**. The first sync on a new device loads the saved board. The badge at the top stays hidden while sync is fine, and shows **Offline** or **Sync problem** (tap it to retry) when something needs attention.
 
 ## Invites
 
@@ -166,6 +166,8 @@ All of this stays inside Cloudflare's free plan, with nothing to maintain:
 - **KV reads (100,000 a day).** The 20-second refresh reads the board plus one read per shared list on it, and an invited token's lookup is cached for a minute inside the Worker, so it costs about one read per refresh, like an owner token.
 - **KV deletes and lists (1,000 a day each)** are only used by joining, deleting and the nightly backup.
 - `MAX_BOARDS` in `wrangler.toml` (12) caps invited boards so a forwarded invite can't run the account over. If a free limit is reached, Cloudflare refuses requests until the next day; it never bills a free account.
+
+- A save is refused (413) above 500 lists, 30,000 todos or 20,000 older Done todos, and todo text is cut at 5,000 characters, so a leaked token or buggy device can't fill KV. A manual snapshot of an unchanged board within 5 minutes of the last one reuses it.
 
 Anyone who would rather keep their lists in their own Cloudflare account can follow [docs/self-hosting.md](docs/self-hosting.md).
 

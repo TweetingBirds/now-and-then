@@ -8,6 +8,8 @@
   --margin: #d9534f;
   --accent: #2f5bd3;
   --line: #dde3ea;
+  /* From brand/tokens.css: red is for deleting only; sync trouble is amber. */
+  --delete: #c0392b; --synced: #3aa76d; --waiting: #e0a030; --waiting-ink: #8a5a00;
   --shadow: 0 1px 2px rgb(20 30 50 / .08), 0 6px 18px rgb(20 30 50 / .06);
   --font-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
   --font-body: "Atkinson Hyperlegible", system-ui, -apple-system, sans-serif;
@@ -17,6 +19,7 @@
   :root:not([data-theme="light"]) {
     --bg: #12161c; --surface: #1b2129; --ink: #e8edf3; --muted: #adb7c3;
     --rule: #2c3540; --margin: #e2706c; --accent: #7fa2ff; --line: #2a323c;
+    --delete: #e2706c; --waiting-ink: #f0c060;
     --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 6px 18px rgb(0 0 0 / .3);
     color-scheme: dark;
   }
@@ -24,6 +27,7 @@
 :root[data-theme="dark"] {
   --bg: #12161c; --surface: #1b2129; --ink: #e8edf3; --muted: #adb7c3;
   --rule: #2c3540; --margin: #e2706c; --accent: #7fa2ff; --line: #2a323c;
+    --delete: #e2706c; --waiting-ink: #f0c060;
   --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 6px 18px rgb(0 0 0 / .3);
   color-scheme: dark;
 }
@@ -76,7 +80,7 @@ header.top {
 }
 .col {
   --c: #7b9cff;
-  flex: 0 0 300px; max-width: calc(100vw - 48px);
+  flex: 0 0 300px; max-width: calc(100vw - 48px); min-width: 0;
   max-height: 100%; display: flex; flex-direction: column;
   scroll-snap-align: start;
   border-radius: 14px; box-shadow: var(--shadow);
@@ -231,7 +235,7 @@ header.top {
 .more-done { flex: none; align-self: center; margin: 10px 4px 4px; font-size: .85rem; }
 
 .new-list {
-  flex: 0 0 200px; align-self: stretch; max-height: 220px;
+  flex: 0 0 132px; align-self: stretch; max-height: 220px;
   border: 2px dashed var(--line); border-radius: 14px; background: transparent;
   color: var(--muted); font-family: var(--font-display); font-weight: 500; font-size: 1.05rem;
   display: grid; place-content: center; gap: 4px; text-align: center;
@@ -250,7 +254,7 @@ header.top {
 .pop button.item { text-align: left; border: none; background: none; padding: 7px 8px; border-radius: 6px; display: flex; gap: 8px; align-items: center; }
 .pop button.item:hover { background: color-mix(in oklab, var(--ink) 7%, transparent); }
 .pop .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
-.pop .danger { color: var(--margin); }
+.pop .danger { color: var(--delete); }
 .swatches { display: grid; grid-template-columns: repeat(6, 26px); gap: 6px; padding: 6px 8px; }
 .swatches button { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line); }
 .swatches button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--ink); }
@@ -295,6 +299,23 @@ body.is-dragging .board { scroll-snap-type: none; }
   .toast { animation: rise .25s ease-out; }
   @keyframes rise { from { transform: translate(-50%, 8px); opacity: 0; } }
 }
+/* Phone list tabs (see renderTabs). */
+.list-tabs { display: none; }
+@media (max-width: 700px) {
+  .list-tabs {
+    display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; flex: none;
+    padding: 0 max(16px, env(safe-area-inset-right, 0px)) 6px max(16px, env(safe-area-inset-left, 0px));
+  }
+  .list-tabs::-webkit-scrollbar { display: none; }
+  .list-tabs .tab {
+    flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 12px;
+    border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--muted);
+    font: inherit; font-size: .85rem; white-space: nowrap; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; position: relative;
+  }
+  .list-tabs .tab::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+  .list-tabs .tab::after { content: ""; position: absolute; inset: -6px 0; } /* 44px tall to tap */
+  .list-tabs .tab[aria-current] { color: var(--ink); border-color: color-mix(in oklab, var(--c) 60%, var(--line)); background: color-mix(in oklab, var(--c) 20%, var(--surface)); font-weight: 700; }
+}
 @media (max-width: 520px) {
   .tools { margin-left: 0; }
   .col { flex-basis: calc(100vw - 48px); }
@@ -328,11 +349,10 @@ body { margin: 0; padding-top: env(safe-area-inset-top, 0px); padding-bottom: en
   border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 5px 10px;
 }
 .sync::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-.sync[data-state="ok"]::before { background: #3aa76d; }
+.sync[data-state="ok"]::before { background: var(--synced); }
 .sync[data-state="busy"]::before { background: var(--accent); }
-.sync[data-state="error"]::before { background: var(--margin); }
-.sync[data-state="offline"]::before, .sync[data-state="pending"]::before { background: #e0a030; }
-.sync[data-state="error"] { color: var(--margin); border-color: color-mix(in oklab, var(--margin) 45%, var(--line)); }
+.sync[data-state="error"]::before, .sync[data-state="offline"]::before, .sync[data-state="pending"]::before { background: var(--waiting); }
+.sync[data-state="error"] { color: var(--waiting-ink); border-color: color-mix(in oklab, var(--waiting) 55%, var(--line)); }
 .sync[data-state="busy"]::before { animation: pulse 1s ease-in-out infinite alternate; }
 @keyframes pulse { to { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .sync[data-state="busy"]::before { animation: none; } }
@@ -341,7 +361,7 @@ body { margin: 0; padding-top: env(safe-area-inset-top, 0px); padding-bottom: en
 /* Todos edited here that haven't reached the Worker yet. Only shown while
    offline or failing, so a normal save doesn't flash a dot on every edit. */
 .unsynced-dot { display: none; flex: none; width: 8px; height: 8px; margin-top: 8px; border-radius: 50%;
-  border: 2px solid #e0a030; background: transparent; }
+  border: 2px solid var(--waiting); background: transparent; }
 body[data-sync="offline"] .todo.unsynced .unsynced-dot,
 body[data-sync="error"] .todo.unsynced .unsynced-dot,
 body[data-sync="pending"] .todo.unsynced .unsynced-dot { display: block; }
@@ -388,13 +408,13 @@ body:has(dialog.settings[open]) { overflow: hidden; }
 .settings .cloud-backups { display: flex; flex-direction: column; gap: 8px; }
 .settings .restore-box {
   display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px;
-  background: color-mix(in oklab, var(--margin) 7%, var(--surface));
+  background: color-mix(in oklab, var(--delete) 7%, var(--surface));
 }
 .settings .restore-box[hidden] { display: none; }
 .settings p.note { font-size: .8rem; }
 .settings p a { color: var(--accent); }
-.settings .btn.danger { color: var(--margin); }
-.settings .btn.primary.danger { background: var(--margin); border-color: var(--margin); color: #fff; }
+.settings .btn.danger { color: var(--delete); }
+.settings .btn.primary.danger { background: var(--delete); border-color: var(--delete); color: #fff; }
 .settings .invite-new input { flex: 1 1 12em; width: auto; }
 .settings .invite-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: .88rem; }
 .settings .invite-list:empty { display: none; }
@@ -405,13 +425,13 @@ body:has(dialog.settings[open]) { overflow: hidden; }
 .settings .restore-box .toggle { align-items: flex-start; }
 .settings .restore-box .toggle input { margin-top: 3px; }
 .settings .msg { font-size: .85rem; min-height: 1.2em; color: var(--muted); }
-.settings .msg.bad { color: var(--margin); }
+.settings .msg.bad { color: var(--waiting-ink); }
 .settings .version { font-variant-numeric: tabular-nums; }
 .settings .row.update { align-items: center; }
 .settings .row.update .msg:empty { display: none; }
 .settings .new-dot {
   font-size: .68rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
-  color: var(--surface); background: var(--margin); border-radius: 999px; padding: 1px 7px;
+  color: var(--surface); background: var(--accent); border-radius: 999px; padding: 1px 7px;
 }
 .settings .new-dot[hidden] { display: none; }
 /* The badge is its own signal: no link underline under it. */
@@ -437,7 +457,7 @@ dialog.settings#settings .settings-body { background: var(--bg); }
 .settings .item.stack { flex-direction: column; align-items: stretch; gap: 10px; padding-block: 12px; }
 .settings .item-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .settings .item-text small { color: var(--muted); font-size: .8rem; }
-.settings .item-text small.bad { color: var(--margin); }
+.settings .item-text small.bad { color: var(--waiting-ink); }
 .settings .item-value { color: var(--muted); }
 .settings .item .chev { flex: none; color: var(--muted); }
 .settings .item.nav { cursor: pointer; }
@@ -466,7 +486,7 @@ dialog.settings#settings .settings-body { background: var(--bg); }
 .settings .back-btn:hover { background: color-mix(in oklab, var(--accent) 10%, transparent); }
 dialog.settings.sub h2 { font-size: 1.1rem; }
 .settings .version { font-size: .8rem; padding-left: 2px; }
-.settings .danger-zone h3 { color: var(--margin); }
+.settings .danger-zone h3 { color: var(--delete); }
 
 /* ---------- Appearance, haptics and keyboard shortcuts ---------- */
 /* Theme picker: a three-way segmented control. */
@@ -597,18 +617,21 @@ body:has(dialog.welcome[open]) { overflow: hidden; }
 
 /* ---------- Sync page: the rarer things under Advanced ---------- */
 .settings details.advanced { gap: 18px; }
-.settings details.advanced > summary {
+.settings details.by-hand[open] { display: flex; flex-direction: column; gap: 10px; }
+.settings details.advanced > summary, .settings details.by-hand > summary {
   cursor: pointer; font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
   font-weight: 700; padding: 10px 2px; min-height: 44px; display: flex; align-items: center; gap: 6px; list-style: none;
 }
-.settings details.advanced > summary::-webkit-details-marker { display: none; }
-.settings details.advanced > summary::before { content: "▸"; font-size: .9rem; transition: transform .15s; }
-.settings details.advanced[open] > summary::before { transform: rotate(90deg); }
+.settings details.advanced > summary::-webkit-details-marker, .settings details.by-hand > summary::-webkit-details-marker { display: none; }
+.settings details.advanced > summary::before, .settings details.by-hand > summary::before { content: "▸"; font-size: .9rem; transition: transform .15s; }
+.settings details.advanced[open] > summary::before, .settings details.by-hand[open] > summary::before { transform: rotate(90deg); }
 @media (prefers-reduced-motion: reduce) { .settings details.advanced > summary::before { transition: none; } }
 .settings details.advanced[open] { display: flex; flex-direction: column; }
-.settings .msg.device-msg.bad { color: var(--margin); }
+.settings .msg.device-msg.bad { color: var(--waiting-ink); }
 .settings .people { display: flex; flex-direction: column; gap: 10px; }
 .settings .people h3 { margin-top: 6px; }
 .keys .keys-alt { display: flex; align-items: center; gap: 8px; font-size: .9rem; color: var(--ink); padding: 4px 0 6px; }
 .keys .keys-alt input { width: 18px; height: 18px; margin: 0; }
 .keylist kbd.opt[hidden] { display: none; }
+/* Inputs have a built-in minimum width that pushed lists past 300px on a wide screen. */
+.col input, .col .col-title { min-width: 0; }

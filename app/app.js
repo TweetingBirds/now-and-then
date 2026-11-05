@@ -6,7 +6,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.18.0";
+  const APP_VERSION = "1.19.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -291,6 +291,12 @@
   // The badge in the header always says whether this device's edits have reached
   // the Worker, and which board it syncs with, so a wrong token or a dropped
   // connection is visible instead of silent.
+  // A plain-words reason for a refused request.
+  function answered(status) {
+    if (status === 413) return "Your lists are too big to sync. Download a backup in Settings and send me a note, and I'll help.";
+    if (status === 429 || status >= 500) return "The sync service is having trouble right now. Your changes are saved on this device and will sync later.";
+    return `Sync didn't work (error ${status}). Your changes are saved on this device.`;
+  }
   let syncError = "";   // last error from the Worker, cleared by the next good sync
   let netDown = false;  // the last request couldn't reach the Worker at all
 
@@ -392,7 +398,7 @@
     else {
       if (local.board) lines.push(`Syncing with ${boardLabel(local.board)}.`);
       lines.push(lastSyncedText() + ".");
-      if (n) lines.push(`${plural(n, "change")} saved here, not yet on the Worker.`);
+      if (n) lines.push(`${plural(n, "change")} saved here, not synced yet.`);
       if (syncError) lines.push(syncError);
     }
     s.title = lines.join(" ");
@@ -407,7 +413,7 @@
     if (e instanceof TypeError) { netDown = true; syncError = ""; }
     else { netDown = false; syncError = e.message || String(e); }
     showStatus();
-    return syncError || "Couldn't reach the Worker. Check the connection and try again.";
+    return syncError || "Couldn't reach the sync service. Check the connection and try again.";
   }
   function syncSucceeded() {
     netDown = false; syncError = "";
@@ -470,10 +476,10 @@
       // so this device's lists aren't merged into it.
       if (!local.synced && (local.pristine || local.switching)) {
         const got = await fetch(dataUrl(), { headers: { "Authorization": "Bearer " + local.syncToken } });
-        if (got.status === 401) throw new Error("The access token was not accepted.");
+        if (got.status === 401) throw new Error("The sync service didn't accept this device's access token.");
         if (got.status === 410) throw boardGone();
         if (got.status === 409) throw new Error(await clashMessage(got));
-        if (!got.ok) throw new Error("The Worker answered " + got.status + ".");
+        if (!got.ok) throw new Error(answered(got.status));
         const remote = await got.json();
         // Older Done on this device went with the lists it had, so it goes too.
         if (remote.lists && remote.lists.some(l => !l.deleted)) { board = remote; rememberServer(remote); forgetOld(); }
@@ -486,10 +492,10 @@
       const old = oldToSend();
       const res = await fetch(dataUrl(), { method: "PUT", headers, body: JSON.stringify(old.length ? Object.assign({}, board, { old }) : board) });
       noteClock(res, asked);
-      if (res.status === 401) throw new Error("The access token was not accepted.");
+      if (res.status === 401) throw new Error("The sync service didn't accept this device's access token.");
       if (res.status === 410) throw boardGone();
       if (res.status === 409) throw new Error(await clashMessage(res));
-      if (!res.ok) throw new Error("The Worker answered " + res.status + ".");
+      if (!res.ok) throw new Error(answered(res.status));
       const merged = await res.json();
       noteBoard(res);
       local.switching = false; local.otherBoard = "";
@@ -539,7 +545,7 @@
         `If that's a mistake, fix the token in the Worker. If it's what you want, tap Save and sync to switch this device to ${boardLabel(info.board)}.`;
     }
     if (info.error === "token clash") return `The Worker gives the same token to ${(info.boards || []).join(" and ")}. Nothing was synced. Give each person their own token.`;
-    return "The Worker answered 409.";
+    return answered(409);
   }
   // Fetch the saved board without sending ours, so a device that's just sitting open
   // picks up changes made elsewhere. This is a read, which is cheap: the Worker only
@@ -560,10 +566,10 @@
       const asked = Date.now();
       const res = await fetch(dataUrl(), { headers: { "Authorization": "Bearer " + local.syncToken }, cache: "no-store", signal: quit.signal });
       noteClock(res, asked);
-      if (res.status === 401) throw new Error("The access token was not accepted.");
+      if (res.status === 401) throw new Error("The sync service didn't accept this device's access token.");
       if (res.status === 410) throw boardGone();
       if (res.status === 409) throw new Error(await clashMessage(res));
-      if (!res.ok) throw new Error("The Worker answered " + res.status + ".");
+      if (!res.ok) throw new Error(answered(res.status));
       // Same board-identity guard as a push: never merge another person's board in.
       const who = res.headers.get("X-Board");
       if (local.board && who && who !== local.board) {
@@ -666,9 +672,43 @@
       full ? "List limit reached" : "+ New list", el("small", {}, `${ls.length} of ${MAX_LISTS}`)));
     boardEl.append(renderArchive());
     boardEl.scrollLeft = scroll;
+    renderTabs(ls);
     if (focusedId && (focusedId.startsWith("add-") || focusedId === "doneSearch")) document.getElementById(focusedId)?.focus();
     else if (kbSel && (rowFocused || document.activeElement === document.body)) focusTodo(kbSel);
   }
+
+  // On a phone only one list fits on screen, so a row of small tabs under the
+  // header says which one you're on and jumps to any other, Done included.
+  const tabsEl = document.getElementById("listTabs");
+  const colFor = (id) => id === "done" ? boardEl.querySelector(".col.archive") : boardEl.querySelector(`.col[data-list="${CSS.escape(id)}"]`);
+  const colLeft = (col) => col.getBoundingClientRect().left - boardEl.getBoundingClientRect().left + boardEl.scrollLeft - (parseFloat(getComputedStyle(boardEl).paddingLeft) || 0);
+  function renderTabs(ls) {
+    const items = [...ls.map(l => ({ id: l.id, name: l.name || "Untitled", c: safeColor(l.color) })), { id: "done", name: "Done", c: "#8a94a3" }];
+    tabsEl.replaceChildren(...items.map(t => el("button", { type: "button", class: "tab", "data-for": t.id, style: `--c:${t.c}`,
+      onclick: () => {
+        const col = colFor(t.id); if (!col) return;
+        const smooth = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+        boardEl.scrollTo({ left: colLeft(col), behavior: smooth ? "smooth" : "auto" });
+      } }, t.name)));
+    markTab();
+  }
+  let tabFrame = 0;
+  function markTab() {
+    if (!tabsEl.offsetParent) return; // hidden on wider screens
+    let best = null, gap = Infinity;
+    for (const col of boardEl.querySelectorAll(".col")) {
+      const d = Math.abs(colLeft(col) - boardEl.scrollLeft);
+      if (d < gap) { gap = d; best = col; }
+    }
+    const id = best ? (best.classList.contains("archive") ? "done" : best.dataset.list) : "";
+    for (const b of tabsEl.children) {
+      const on = b.dataset.for === id;
+      if (on) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
+      if (on) { const r = b.getBoundingClientRect(), box = tabsEl.getBoundingClientRect(); if (r.left < box.left || r.right > box.right) tabsEl.scrollLeft += r.left - box.left - 16; }
+    }
+  }
+  boardEl.addEventListener("scroll", () => { cancelAnimationFrame(tabFrame); tabFrame = requestAnimationFrame(markTab); }, { passive: true });
+  window.addEventListener("resize", () => markTab());
 
   function renderList(list) {
     const todos = todosIn(list.id);
@@ -895,11 +935,11 @@
     const res = await fetch(workerBase() + "/shared" + path, Object.assign({ cache: "no-store" }, opts, {
       headers: { "Authorization": "Bearer " + local.syncToken, "Content-Type": "application/json" },
     }));
-    if (res.status === 401) throw new Error("The access token was not accepted.");
+    if (res.status === 401) throw new Error("The sync service didn't accept this device's access token.");
     if (res.status === 410) throw boardGone();
     let body = {};
     try { body = await res.json(); } catch (e) {}
-    if (!res.ok) { const err = new Error(body.error || "The Worker answered " + res.status + "."); err.status = res.status; err.code = body.error; throw err; }
+    if (!res.ok) { const err = new Error(body.error || answered(res.status)); err.status = res.status; err.code = body.error; throw err; }
     return body;
   }
   const canUseShared = () => syncConfigured() && local.synced && !local.otherBoard;
@@ -1403,7 +1443,7 @@
     const sub = document.getElementById("syncRowSub"), state = syncState();
     sub.classList.toggle("bad", state === "error");
     if (state === "off") sub.textContent = "Off. Your lists stay on this device.";
-    else if (state === "error") sub.textContent = "Needs a look. " + (local.otherBoard ? "This token opens a different board." : "The Worker refused the last sync.");
+    else if (state === "error") sub.textContent = "Needs a look. " + (local.otherBoard ? "This token opens a different board." : "The last sync didn't go through.");
     else sub.textContent = [local.board ? boardLabel(local.board).replace(/^./, c => c.toUpperCase()) : "", state === "offline" ? "Offline" : lastSyncedText()].filter(Boolean).join(" · ");
     document.getElementById("backupRowSub").textContent = syncConfigured() && local.synced
       ? "Download, restore and nightly copies." : "Download or restore a backup file.";
@@ -1560,8 +1600,8 @@
     const res = await fetch(workerBase() + path, Object.assign({ cache: "no-store" }, opts, {
       headers: { "Authorization": "Bearer " + local.syncToken, "Content-Type": "application/json" },
     }));
-    if (res.status === 403) throw new Error("Only the Worker's owner can invite people.");
-    if (!res.ok) throw new Error("The Worker answered " + res.status + ".");
+    if (res.status === 403) throw new Error("Only whoever runs the sync service can invite people.");
+    if (!res.ok) throw new Error(answered(res.status));
     return res.json();
   }
   const shortDate = (iso) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -1576,7 +1616,7 @@
           catch (e) { inviteMsg(e.message, true); }
         } }, "Revoke"))));
       const n = boards.boards.length;
-      inviteMsg(n ? `${n} ${n === 1 ? "person has" : "people have"} joined by invite, out of ${boards.max} this Worker allows.` : "Nobody has joined by invite yet.");
+      inviteMsg(n ? `${n} ${n === 1 ? "person has" : "people have"} joined by invite, out of ${boards.max} this sync service allows.` : "Nobody has joined by invite yet.");
     } catch (e) { ul.replaceChildren(); inviteMsg(e.message, true); }
   }
   document.getElementById("inviteMake").addEventListener("click", async () => {
@@ -1603,10 +1643,10 @@
     msg.className = "msg"; msg.textContent = "Deleting…";
     try {
       const res = await fetch(workerBase() + "/data?confirm=delete", { method: "DELETE", headers: { "Authorization": "Bearer " + local.syncToken, "X-Expect-Board": local.board } });
-      if (res.status === 403) throw new Error("This board was set up by the Worker's owner. Ask them to delete it.");
-      if (!res.ok && res.status !== 410) throw new Error("The Worker answered " + res.status + ".");
+      if (res.status === 403) throw new Error("These lists were set up by whoever runs the sync service. Ask them to delete them.");
+      if (!res.ok && res.status !== 410) throw new Error(answered(res.status));
     } catch (e) {
-      msg.className = "msg bad"; msg.textContent = "Couldn't delete: " + (e instanceof TypeError ? "the Worker can't be reached." : e.message);
+      msg.className = "msg bad"; msg.textContent = "Couldn't delete: " + (e instanceof TypeError ? "the sync service can't be reached." : e.message);
       return;
     }
     clearTimeout(pushTimer); pushTimer = null;
@@ -1717,7 +1757,7 @@
           body: JSON.stringify({ code: link.join, name: document.getElementById("joinName").value.trim() }) });
         if (res.status === 404) throw new Error("This invite has already been used or has expired. Ask for a new one.");
         if (res.status === 503) throw new Error("This sync service is full right now. Ask whoever invited you.");
-        if (!res.ok) throw new Error("The Worker answered " + res.status + ".");
+        if (!res.ok) throw new Error(answered(res.status));
         token = (await res.json()).token;
         // A brand-new board is empty: this device's lists become its first contents.
         useSync(link.sync, token);
@@ -2071,9 +2111,9 @@
   function snapUrl() { return local.syncUrl.replace(/\/+$/, "") + "/snapshots"; }
   async function snapFetch(path = "", opts = {}) {
     const res = await fetch(snapUrl() + path, Object.assign({ cache: "no-store" }, opts, { headers: { "Authorization": "Bearer " + local.syncToken } }));
-    if (res.status === 404 && !path) throw new Error("This Worker doesn't keep backups yet.");
+    if (res.status === 404 && !path) throw new Error("This sync service doesn't keep backups yet.");
     if (res.status === 410) throw boardGone();
-    if (!res.ok) throw new Error("The Worker answered " + res.status + ".");
+    if (!res.ok) throw new Error(answered(res.status));
     const who = res.headers.get("X-Board");
     if (local.board && who && who !== local.board) throw new Error("This token opens a different board.");
     return res.json();
@@ -2100,7 +2140,7 @@
       document.getElementById("snapRestore").disabled = none;
       document.getElementById("snapDownload").disabled = none;
       document.getElementById("cloudInfo").textContent =
-        `The sync Worker saves a copy of ${boardLabel(got.board || local.board)} each night it changes, and at least once a week, and keeps it for ${got.days || 30} days.` +
+        `The sync service saves a copy of ${boardLabel(got.board || local.board)} each night it changes, and at least once a week, and keeps it for ${got.days || 30} days.` +
         (none ? " The first one is saved tonight." : "");
       box.hidden = false;
     } catch (e) {
