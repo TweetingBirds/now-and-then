@@ -452,3 +452,15 @@ kbd {
   box-shadow: inset 3px 0 0 color-mix(in oklab, var(--c) 75%, var(--ink));
 }
 .todo:focus-visible .more, .todo:focus-visible .grip { opacity: 1; }
+
+/* ---------- No zoom, no page scroll ----------
+   The app is a fixed canvas: only the board (sideways), each list, and dialogs scroll.
+   pan-x pan-y lets fingers scroll but turns off pinch and double-tap zoom; the grip's
+   touch-action: none still wins for drags. overscroll-behavior keeps a list that hits
+   its top or bottom from dragging the whole page along with it. */
+html, body { overflow: hidden; overscroll-behavior: none; touch-action: pan-x pan-y; }
+.board, .col-body { overscroll-behavior: contain; }
+/* iOS zooms in on any field under 16px when it gets focus. */
+@media (pointer: coarse) {
+  input, select, textarea, .text[contenteditable="true"] { font-size: 16px !important; }
+}
