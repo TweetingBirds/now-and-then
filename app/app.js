@@ -6,7 +6,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.14.0";
+  const APP_VERSION = "1.15.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -88,8 +88,10 @@
   }
 
   // ---------- helpers over the board ----------
-  const lists = () => board.lists.filter(l => !l.deleted).sort((a, b) => a.order - b.order);
-  const listById = (id) => board.lists.find(l => l.id === id && !l.deleted);
+  // Finished temporary lists stay in board.lists with archived: true (see archiveList).
+  const lists = () => board.lists.filter(l => !l.deleted && !l.archived).sort((a, b) => a.order - b.order);
+  const listById = (id) => board.lists.find(l => l.id === id && !l.deleted && !l.archived);
+  const finishedLists = () => board.lists.filter(l => !l.deleted && l.archived).sort((a, b) => (b.archivedDay || "").localeCompare(a.archivedDay || "") || (b.updatedAt - a.updatedAt));
   const todosIn = (listId) => board.todos.filter(t => !t.deleted && !t.archived && t.listId === listId).sort((a, b) => a.order - b.order);
   const archived = () => board.todos.filter(t => !t.deleted && t.archived).sort((a, b) => (b.archivedDay || "").localeCompare(a.archivedDay || "") || (b.updatedAt - a.updatedAt));
   const touch = (o, fields) => Object.assign(o, fields, { updatedAt: now() });
@@ -114,11 +116,26 @@
     touch(t, { archived: true, archivedDay: t.doneDay || todayKey(), fromName: l ? l.name : "", fromColor: l ? l.color : "#a3a9b5" });
   }
 
+  // A temporary list (a packing list, say) goes to Done as a whole once every todo
+  // on it is checked. Its todos go to Done with it, so "Use again" can bring the
+  // list back with all of them unchecked.
+  function archiveList(l) {
+    todosIn(l.id).forEach(archive);
+    touch(l, { archived: true, archivedDay: todayKey() });
+  }
+  // A temporary list is finished when it has todos and all of them are checked.
+  // It leaves when its todos would: right away with "doneNow", else the next morning.
+  function listFinished(l, today = todayKey()) {
+    const ts = todosIn(l.id);
+    return !!l.temp && ts.length > 0 && ts.every(t => t.done && (board.settings.doneNow || (t.doneDay && t.doneDay < today)));
+  }
+
   // Checked todos move to Done: right away when the "doneNow" setting is on,
   // otherwise the morning after they were checked.
   function sweepDone() {
     const today = todayKey();
     let moved = 0;
+    for (const l of lists()) if (listFinished(l, today)) { moved += todosIn(l.id).length; archiveList(l); }
     for (const t of board.todos) {
       if (!t.deleted && !t.archived && t.done && (board.settings.doneNow || (t.doneDay && t.doneDay < today))) { archive(t); moved++; }
     }
@@ -486,6 +503,13 @@
     else if (kbSel && (rowFocused || document.activeElement === document.body)) focusTodo(kbSel);
   }
 
+  const TEMP_HINT = "Temporary list: it goes to Done once everything on it is checked";
+  const BOX = () => {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("width", "16"); svg.setAttribute("height", "16"); svg.setAttribute("aria-hidden", "true");
+    svg.innerHTML = '<rect x="3" y="4" width="18" height="5" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 9v9.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V9M10 13h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+    return svg;
+  };
   function renderList(list) {
     const todos = todosIn(list.id);
     const open = todos.filter(t => !t.done).length;
@@ -498,6 +522,7 @@
         onchange: e => { const v = e.target.value.trim(); if (v && v !== list.name) { touch(list, { name: v }); commit(); } else e.target.value = list.name; },
         onkeydown: e => { if (e.key === "Enter") e.target.blur(); },
       }),
+      list.temp ? el("button", { class: "temp-mark", type: "button", title: TEMP_HINT, "aria-label": TEMP_HINT, "data-pop-trigger": true, onclick: e => listPop(e, list, head) }, BOX()) : null,
       list.shared ? el("button", { class: "shared-mark", type: "button", title: sharedWith(list), "aria-label": sharedWith(list), "data-pop-trigger": true, onclick: e => listPop(e, list, head) }, PEOPLE()) : null,
       el("span", { class: "count", title: "Unfinished" }, String(open)),
       el("button", { class: "icon-btn", title: "List options", "aria-label": `${list.name} options`, "data-pop-trigger": true, onclick: e => listPop(e, list, head) }, "•••"),
@@ -523,12 +548,17 @@
       el("button", { class: "grip", "aria-label": "Drag to move", title: "Drag to move", onpointerdown: e => startDrag(e, t, row) }, "⋮⋮"),
       el("input", { type: "checkbox", class: "check", checked: t.done, "aria-label": "Done", onchange: e => {
         const checked = e.target.checked;
-        const undo = undoable([t], () => {
+        const list = listById(t.listId);
+        const temp = list && list.temp;
+        let last = false;
+        const undo = undoable(temp ? [list, ...todosIn(list.id)] : [t], () => {
           touch(t, { done: checked, doneDay: checked ? todayKey() : null });
-          if (checked && board.settings.doneNow) archive(t);
+          last = checked && temp && todosIn(list.id).every(x => x.done);
+          if (checked && board.settings.doneNow) { if (last) archiveList(list); else archive(t); }
           commit();
         });
-        if (checked) toast(board.settings.doneNow ? "Nice. Moved to Done." : "Nice. It moves to Done tomorrow morning.", undo);
+        if (last) toast(board.settings.doneNow ? `All done. ${list.name} moved to Done.` : `All done. ${list.name} moves to Done tomorrow morning.`, undo);
+        else if (checked) toast(board.settings.doneNow ? "Nice. Moved to Done." : "Nice. It moves to Done tomorrow morning.", undo);
       } }),
       text,
       el("span", { class: "unsynced-dot", title: "Not synced yet", "aria-label": "Not synced yet" }),
@@ -605,11 +635,15 @@
     const confirmBox = el("div", { hidden: true });
     const leaveBox = el("div", { hidden: true });
     const canShare = !list.shared && list.role !== "now" && list.role !== "tomorrow";
+    const canTemp = !list.role; // Now, Tomorrow and Later are the notebook's pages; they stay
     popAt(head, e.currentTarget,
       list.shared ? el("div", { class: "lbl shared-lbl" }, sharedWith(list)) : null,
+      list.temp ? el("div", { class: "lbl shared-lbl" }, "Goes to Done once everything on it is checked.") : null,
       el("button", { class: "item", onclick: () => { closePop(); const i = document.getElementById("name-" + list.id); i.focus(); i.select(); } }, "Rename"),
       el("button", { class: "item", disabled: idx === 0, onclick: () => swapLists(list, ls[idx - 1]) }, "Move list left"),
       el("button", { class: "item", disabled: idx === ls.length - 1, onclick: () => swapLists(list, ls[idx + 1]) }, "Move list right"),
+      canTemp ? el("button", { class: "item", onclick: () => setTemp(list, !list.temp) }, list.temp ? "Make it a regular list" : "Make temporary") : null,
+      list.temp ? el("button", { class: "item", onclick: () => finishNow(list) }, "Move to Done now") : null,
       canShare ? el("button", { class: "item", onclick: () => { closePop(); shareList(list); } }, "Share list…") : null,
       list.shared ? el("button", { class: "item", onclick: () => { closePop(); shareList(list); } }, "Invite someone…") : null,
       list.shared ? el("button", { class: "item danger", onclick: () => { leaveBox.hidden = false; } }, "Leave shared list…") : null,
@@ -633,6 +667,42 @@
         toast(`Deleted ${list.name}`, undo);
       } }, "Yes, delete " + list.name),
     );
+  }
+
+  // Marking a list temporary when everything on it is already checked finishes it
+  // the same way checking the last todo would.
+  function setTemp(list, on) {
+    closePop();
+    const undo = undoable([list, ...todosIn(list.id)], () => {
+      touch(list, { temp: on });
+      if (on && board.settings.doneNow && listFinished(list)) archiveList(list);
+      commit();
+    });
+    toast(!on ? `${list.name} is a regular list again.` : list.archived ? `Everything on ${list.name} was checked, so it moved to Done.` :
+      `${list.name} is temporary. Once everything on it is checked, it moves to Done${board.settings.doneNow ? "" : " the next morning"}.`, undo);
+  }
+  // For a trip that's over before the list is: everything left goes to Done with it.
+  function finishNow(list) {
+    closePop();
+    const undo = undoable([list, ...todosIn(list.id)], () => { archiveList(list); commit(); });
+    toast(`${list.name} moved to Done.`, undo);
+  }
+  // Brings a finished temporary list back to the board with every todo on it unchecked,
+  // ready for the next trip.
+  function useAgain(list) {
+    if (lists().length >= MAX_LISTS) { toast(`You have ${MAX_LISTS} lists already. Delete one to bring ${list.name} back.`, 5000); return; }
+    const items = board.todos.filter(t => !t.deleted && t.archived && t.listId === list.id);
+    const undo = undoable([list, ...items], () => {
+      touch(list, { archived: false, archivedDay: null, order: Math.max(0, ...lists().map(l => l.order)) + 1 });
+      items.forEach(t => touch(t, { archived: false, archivedDay: null, done: false, doneDay: null }));
+      commit();
+    });
+    toast(`${list.name} is back with ${items.length} todo${items.length === 1 ? "" : "s"} to check.`, undo);
+    document.querySelector(`[data-list="${list.id}"]`)?.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" });
+  }
+  // Takes a finished list off the Finished lists shelf. Its todos stay in Done.
+  function forgetList(list) {
+    toast(`Removed ${list.name}. Its todos stay in Done.`, undoable([list], () => { touch(list, { deleted: true }); commit(); }));
   }
 
   function swapLists(a, b) {
@@ -809,12 +879,14 @@
       summary.textContent = !filtering ? "" : when && !doneView.q.trim() ? `${n} finished ${when}` : `${n} match${n === 1 ? "" : "es"}`;
       summary.hidden = !filtering;
       body.replaceChildren();
-      if (!all.length) { body.append(el("div", { class: "empty" }, "Finished todos land here each morning.")); return; }
+      if (!all.length) { const shelf = finishedShelf(); body.append(...(shelf ? [shelf] : []), el("div", { class: "empty" }, "Finished todos land here each morning.")); return; }
       if (!items.length) {
         body.append(el("div", { class: "empty" }, doneView.q.trim() ? "Nothing in Done matches that." : "Nothing finished in this stretch yet."),
           el("button", { type: "button", class: "btn clear-filter", onclick: () => { doneView.q = ""; doneView.range = "all"; doneView.list = ""; render(); } }, "Show everything"));
         return;
       }
+      const shelf = finishedShelf();
+      if (shelf) body.append(shelf);
       let last = null;
       for (const a of items) {
         if (a.archivedDay !== last) { last = a.archivedDay; body.append(el("div", { class: "day-label" }, a.archivedDay ? pretty(a.archivedDay, { weekday: "short", month: "short", day: "numeric" }) : "Earlier")); }
@@ -828,6 +900,25 @@
     }
     fill();
     return col;
+  }
+
+  // Finished temporary lists, above the finished todos. Shown unless a search or
+  // filter is narrowing Done to something else.
+  function finishedShelf() {
+    const q = fold(doneView.q.trim());
+    const shown = finishedLists().filter(l => (!doneView.list || doneView.list === l.name) && (doneView.range === "all" || (l.archivedDay || "") >= rangeStart(doneView.range)) && (!q || fold(l.name).includes(q)));
+    if (!shown.length) return null;
+    return el("div", { class: "shelf" },
+      el("div", { class: "day-label" }, "Finished lists"),
+      shown.map(l => {
+        const n = board.todos.filter(t => !t.deleted && t.archived && t.listId === l.id).length;
+        return el("div", { class: "shelf-item", style: `--c:${l.color}` },
+          el("span", { class: "dot", style: `background:${l.color}` }),
+          el("button", { type: "button", class: "shelf-name", title: `Show ${l.name}'s todos`, onclick: () => { doneView.list = l.name; doneView.q = ""; doneView.range = "all"; render(); } },
+            el("strong", {}, l.name), el("small", {}, `${n} todo${n === 1 ? "" : "s"}${l.archivedDay ? " · " + pretty(l.archivedDay, { month: "short", day: "numeric" }) : ""}`)),
+          el("button", { type: "button", class: "put-back", title: `Bring ${l.name} back with everything unchecked`, onclick: () => useAgain(l) }, el("span", { "aria-hidden": "true" }, "↩"), " Use again"),
+          el("button", { type: "button", class: "icon-btn", title: "Remove from Finished lists", "aria-label": `Remove ${l.name} from Finished lists`, onclick: () => forgetList(l) }, "×"));
+      }));
   }
 
   // Puts a finished todo back, unchecked, at the bottom of the list it came from.
