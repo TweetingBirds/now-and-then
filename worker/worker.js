@@ -32,6 +32,12 @@
 //   POST   /shared/join           { code }    add a shared list to your board
 //   DELETE /shared/<sid>                      leave it (the last one out deletes it)
 //
+// Quick add: POST /add puts text straight into a list without opening the app,
+// for an iPhone Shortcut (share sheet, Siri, Action button, Back Tap) or anything
+// else that can send a request. Body: JSON { text, to } or plain text. Each line
+// of text becomes a todo at the bottom of Now, or of the list named by `to` (a
+// role like "tomorrow" or "later", or a list's name). Same bearer token as /data.
+//
 // Backups: once a day (the cron trigger in wrangler.toml) the Worker copies every
 // board to a snapshot key "snap:<board>:<ISO time>" that KV deletes by itself after
 // SNAPSHOT_DAYS. The app also asks for a snapshot right before it restores a backup.
@@ -59,6 +65,8 @@ const SHARED_ID = /^s_[a-f0-9]{16}$/;
 const MAX_LISTS = 10;      // same as the app: shared lists count toward it
 const MAX_MEMBERS = 10;    // boards per shared list
 const UNSHAREABLE = new Set(["now", "tomorrow"]); // the morning rollover moves todos between these
+const QUICK_MAX = 50;      // todos per quick add
+const QUICK_LEN = 500;     // characters per quick-added todo
 const EMPTY = () => ({ version: 1, settings: {}, lists: [], todos: [] });
 
 // ---------- tokens ----------
@@ -447,6 +455,44 @@ const boardHeaders = (who) => ({
   ...(who.admin ? { "X-Board-Admin": "1" } : {}),
 });
 
+// POST /add — see "Quick add" at the top. Keep the target rules in step with
+// quickTarget() in app/app.js.
+export async function quickAdd(request, env, who) {
+  const hdrs = boardHeaders(who);
+  const raw = await request.text();
+  if (raw.length > 100_000) return json({ error: "too large" }, 413, hdrs);
+  let text = raw, to = "";
+  const url = new URL(request.url);
+  if (/json/i.test(request.headers.get("Content-Type") || "") || /^\s*\{/.test(raw)) {
+    let body;
+    try { body = JSON.parse(raw || "{}"); } catch (e) { return json({ error: "bad json" }, 400, hdrs); }
+    text = typeof body.text === "string" ? body.text : "";
+    to = typeof body.to === "string" ? body.to : "";
+  }
+  if (!text) text = url.searchParams.get("text") || "";
+  if (!to) to = url.searchParams.get("to") || "";
+  const lines = text.split(/\r?\n/).map((x) => x.trim().replace(/^[-*•]\s+/, "").slice(0, QUICK_LEN)).filter(Boolean).slice(0, QUICK_MAX);
+  if (!lines.length) return json({ error: "no text" }, 400, hdrs);
+
+  const KEY = "board:" + who.board;
+  const stored = await env.NOW_AND_THEN.get(KEY, "json");
+  const view = await openBoard(env, who.board, stored);
+  const live = view.board.lists.filter((l) => !l.deleted).sort((a, b) => (a.order || 0) - (b.order || 0));
+  const want = to.trim().toLowerCase();
+  const list = (want && (live.find((l) => l.role === want) || live.find((l) => (l.name || "").trim().toLowerCase() === want)))
+    || live.find((l) => l.role === "now") || live[0];
+  if (!list) return json({ error: "no lists yet. Open the app once so it can sync." }, 409, hdrs);
+
+  let order = Math.max(0, ...view.board.todos.filter((t) => t.listId === list.id && !t.deleted && !t.archived).map((t) => t.order || 0));
+  const t = Date.now();
+  const todos = lines.map((line) => ({
+    id: crypto.randomUUID(), text: line, listId: list.id, order: ++order,
+    done: false, doneDay: null, archived: false, updatedAt: t,
+  }));
+  await putBoard(env, who, stored, { version: 1, settings: view.board.settings, lists: [], todos });
+  return json({ added: todos.length, list: list.name, todos: todos.map((x) => x.text) }, 200, hdrs);
+}
+
 async function readJson(request, max = 4_000_000) {
   const body = await request.text();
   if (body.length > max) return { error: json({ error: "too large" }, 413) };
@@ -552,6 +598,12 @@ export default {
     if (/\/(invites|boards)(\/[^/]+)?$/.test(path)) {
       const who = await whoIs(request, env, { fresh: true });
       return authError(who) || admin(request, env, who, url);
+    }
+
+    if (path.endsWith("/add")) {
+      if (request.method !== "POST") return json({ error: "method not allowed" }, 405);
+      const who = await whoIs(request, env, { fresh: true });
+      return authError(who) || quickAdd(request, env, who);
     }
 
     const snap = path.match(/\/snapshots(?:\/([^/]+))?$/);

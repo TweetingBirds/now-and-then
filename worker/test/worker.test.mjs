@@ -288,3 +288,57 @@ test("snapshots include shared lists", async () => {
   assert.equal(s.lists, 2);
   assert.equal(s.todos, 2);
 });
+
+test("quick add puts text at the bottom of Now, or the list named by to", async () => {
+  const e = env();
+  const lists = [
+    { id: "n", name: "Now", role: "now", order: 1, updatedAt: 1 },
+    { id: "tm", name: "Tomorrow", role: "tomorrow", order: 2, updatedAt: 1 },
+    { id: "g", name: "Groceries", role: null, order: 3, updatedAt: 1 },
+  ];
+  await call(e, "PUT", "/data", { token: NATE, body: { lists, todos: [{ id: "a", listId: "n", text: "first", order: 4, updatedAt: 1 }] } });
+
+  let r = await call(e, "POST", "/add", { token: NATE, body: { text: "call the dentist" } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { added: 1, list: "Now", todos: ["call the dentist"] });
+
+  r = await worker.fetch(new Request(W + "/add", { method: "POST", body: "- eggs\n\n• milk \n", headers: { Authorization: "Bearer " + NATE, "Content-Type": "text/plain" } }), e);
+  assert.equal((await r.json()).added, 2);
+  r = await call(e, "POST", "/add", { token: NATE, body: { text: "pack", to: "tomorrow" } });
+  assert.equal((await r.json()).list, "Tomorrow");
+  r = await call(e, "POST", "/add?to=groceries", { token: NATE, body: { text: "bread" } });
+  assert.equal((await r.json()).list, "Groceries");
+  r = await call(e, "POST", "/add", { token: NATE, body: { text: "x", to: "nope" } });
+  assert.equal((await r.json()).list, "Now", "an unknown list falls back to Now");
+
+  const b = await (await call(e, "GET", "/data", { token: NATE })).json();
+  const inNow = b.todos.filter(t => t.listId === "n").sort((x, y) => x.order - y.order).map(t => t.text);
+  assert.deepEqual(inNow, ["first", "call the dentist", "eggs", "milk", "x"]);
+  assert.ok(b.todos.find(t => t.text === "pack").listId === "tm");
+  assert.ok(b.todos.find(t => t.text === "bread").listId === "g");
+  assert.equal(b.lists.length, 3, "lists untouched");
+});
+
+test("quick add needs a token, text, POST and a board with lists", async () => {
+  const e = env();
+  assert.equal((await call(e, "POST", "/add", { body: { text: "hi" } })).status, 401);
+  assert.equal((await call(e, "GET", "/add", { token: NATE })).status, 405);
+  assert.equal((await call(e, "POST", "/add", { token: NATE, body: { text: "hi" } })).status, 409, "no lists yet");
+  await call(e, "PUT", "/data", { token: NATE, body: board("milk") });
+  assert.equal((await call(e, "POST", "/add", { token: NATE, body: { text: "  \n " } })).status, 400);
+  assert.equal((await call(e, "POST", "/add", { token: NATE, body: { text: "hi" } })).status, 200);
+  assert.equal((await call(e, "POST", "/add", { token: "tiffany-owner-token-0123", body: { text: "hers" } })).status, 409, "her board has no lists");
+});
+
+test("quick add into a shared list reaches the other board", async () => {
+  const e = env(), TIF = "tiffany-owner-token-0123";
+  await call(e, "PUT", "/data", { token: NATE, body: { lists: [{ id: "n", name: "Now", role: "now", order: 1, updatedAt: 1 }, { id: "g", name: "Groceries", order: 2, updatedAt: 1 }], todos: [] } });
+  await call(e, "PUT", "/data", { token: TIF, body: { lists: [{ id: "tn", name: "Now", role: "now", order: 1, updatedAt: 1 }], todos: [] } });
+  const { sid } = await (await call(e, "POST", "/shared", { token: NATE, body: { listId: "g" } })).json();
+  const { code } = await (await call(e, "POST", `/shared/${sid}/invites`, { token: NATE })).json();
+  assert.equal((await call(e, "POST", "/shared/join", { token: TIF, body: { code } })).status, 200);
+  const r = await call(e, "POST", "/add", { token: NATE, body: { text: "apples", to: "Groceries" } });
+  assert.equal((await r.json()).list, "Groceries");
+  const hers = await (await call(e, "GET", "/data", { token: TIF })).json();
+  assert.ok(hers.todos.some(t => t.text === "apples" && t.listId === "g"));
+});

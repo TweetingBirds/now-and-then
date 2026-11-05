@@ -6,7 +6,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.14.0";
+  const APP_VERSION = "1.15.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -1166,6 +1166,8 @@
   function showSyncMore() {
     const on = syncConfigured() && local.synced && !local.otherBoard;
     document.getElementById("syncMore").hidden = !on;
+    document.getElementById("quickAddZone").hidden = !on;
+    quickMsg.textContent = "";
     document.getElementById("deleteZone").hidden = !(on && local.boardKind === "invited");
     document.getElementById("deleteBox").hidden = true;
     deviceMsg.textContent = "";
@@ -1194,6 +1196,20 @@
       deviceTimer = setTimeout(() => { deviceBtn.textContent = "Copy link for another device"; }, 2500);
     }
   });
+
+  // Quick add from Shortcuts: the Worker's POST /add needs its address and this board's token.
+  const quickMsg = document.getElementById("quickMsg");
+  async function copyQuick(btn, value, label, what) {
+    try { await navigator.clipboard.writeText(value); } catch (e) { prompt(`Copy ${what}:`, value); return; }
+    quickMsg.className = "msg device-msg ok";
+    quickMsg.textContent = what === "the address"
+      ? "Address copied. Paste it as the URL in the Shortcut's Get Contents of URL action."
+      : "Token copied. In the Shortcut, add a header named Authorization with the value Bearer, a space, then the token. Keep it private: it opens your lists.";
+    btn.textContent = "Copied ✓";
+    setTimeout(() => { btn.textContent = label; }, 2500);
+  }
+  document.getElementById("quickUrl").addEventListener("click", e => copyQuick(e.currentTarget, workerBase() + "/add", "Copy address", "the address"));
+  document.getElementById("quickToken").addEventListener("click", e => copyQuick(e.currentTarget, local.syncToken, "Copy access token", "the token"));
 
   const inviteMsg = (text, bad) => { const m = document.getElementById("inviteMsg"); m.className = bad ? "msg bad" : "msg"; m.textContent = text; };
   async function adminFetch(path, opts = {}) {
@@ -1921,6 +1937,51 @@
     return true;
   }
 
+  // ---------- quick add from anywhere ----------
+  // Text can arrive in the address, so other apps and shortcuts can drop a todo in:
+  //   ?add=<text>           adds it to Now. Several lines add several todos.
+  //   ?add                  (no text) opens the Now add box, for the Home Screen shortcut.
+  //   &to=<list>            another list instead, by role (tomorrow, later) or by name.
+  //   ?title=&text=&url=    what the share sheet sends (share_target in the manifest).
+  // The address is cleaned up right after, so reloading doesn't add it twice.
+  const QUICK_MAX = 50, QUICK_LEN = 500;
+  function quickTarget(to) {
+    const ls = lists(), want = (to || "").trim().toLowerCase();
+    return (want && (ls.find(l => l.role === want) || ls.find(l => l.name.trim().toLowerCase() === want)))
+      || ls.find(l => l.role === "now") || ls[0];
+  }
+  function quickLines(p) {
+    let text = p.get("add") || "";
+    if (!text) {
+      // Apps fill the share fields differently: a page often sends its title and
+      // URL, a note sends only text, and some put the link inside the text.
+      const title = (p.get("title") || "").trim(), body = (p.get("text") || "").trim(), url = (p.get("url") || "").trim();
+      text = body || title;
+      if (url && !text.includes(url)) text = text ? text + " " + url : url;
+    }
+    return text.split(/\r?\n/).map(x => x.trim().replace(/^[-*•]\s+/, "").slice(0, QUICK_LEN)).filter(Boolean).slice(0, QUICK_MAX);
+  }
+  function quickAdd() {
+    const p = new URLSearchParams(location.search);
+    if (!["add", "title", "text", "url"].some(k => p.has(k))) return false;
+    const list = quickTarget(p.get("to"));
+    const keep = new URLSearchParams(location.search);
+    for (const k of ["add", "to", "title", "text", "url"]) keep.delete(k);
+    history.replaceState(null, "", location.pathname + (keep.toString() ? "?" + keep : "") + location.hash);
+    if (!list) return false;
+    const lines = quickLines(p);
+    if (!lines.length) { setTimeout(() => focusAdd(list), 300); return true; }
+    let order = Math.max(0, ...todosIn(list.id).map(t => t.order));
+    const t = now();
+    const added = lines.map(text => ({ id: uid(), text, listId: list.id, order: ++order, done: false, doneDay: null, archived: false, updatedAt: t }));
+    board.todos.push(...added);
+    commit();
+    // Undo turns them into tombstones, so a device that already synced them drops them too.
+    const undo = added.map(x => ({ kind: "todos", id: x.id, snap: { id: x.id, listId: x.listId, deleted: true }, at: x.updatedAt }));
+    toast(added.length === 1 ? `Added to ${list.name}` : `Added ${added.length} todos to ${list.name}`, undo);
+    return true;
+  }
+
   // ---------- welcome (first visit) ----------
   // Three short steps: what the lists are for, how a day works, and where lists live.
   // Shown once, to a device that had no lists when it opened the app. An invite, device
@@ -2030,7 +2091,7 @@
   render();
   sync();
   checkForUpdate();
-  readMove().then((moving) => { if (!moving) { readLink(); offerMove(); maybeWelcome(); } });
+  readMove().then((moving) => { if (!moving) { quickAdd(); readLink(); offerMove(); maybeWelcome(); } });
 
   // exposed for tests
   window.__nat = { mergeBoards, restoreBoard, readBackup, boardCsv, backupJson, movePayload, get board() { return board; } };
