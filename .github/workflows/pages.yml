@@ -28,8 +28,9 @@ jobs:
           BUILD_NUMBER="${{ github.run_number }}"
           BUILD_SHA="${GITHUB_SHA::7}"
           BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          APP_VERSION="$(sed -n 's/.*const APP_VERSION = "\([^"]*\)".*/\1/p' app/app.js)"
           sed -i -e "s/__BUILD_NUMBER__/$BUILD_NUMBER/g" -e "s/__BUILD_SHA__/$BUILD_SHA/g" -e "s/__BUILD_DATE__/$BUILD_DATE/g" app/app.js app/sw.js app/index.html
-          printf '{"build":"%s","sha":"%s","date":"%s"}\n' "$BUILD_NUMBER" "$BUILD_SHA" "$BUILD_DATE" > app/version.json
+          printf '{"version":"%s","build":"%s","sha":"%s","date":"%s"}\n' "$APP_VERSION" "$BUILD_NUMBER" "$BUILD_SHA" "$BUILD_DATE" > app/version.json
           grep -q "__BUILD_" app/app.js app/sw.js app/index.html && { echo "Stamping failed"; exit 1; } || true
           cat app/version.json
       - uses: actions/configure-pages@v6
