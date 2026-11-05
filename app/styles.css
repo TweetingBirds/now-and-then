@@ -269,8 +269,7 @@ body.is-dragging .board { scroll-snap-type: none; }
 @media (max-width: 520px) {
   .tools { margin-left: 0; }
   .col { flex-basis: calc(100vw - 48px); }
-  /* Phones stack the title, date and buttons. Tighten those gaps so the
-     lists stay put after the title moves down (see "Status bar fade"). */
+  /* Phones stack the title, date and buttons; keep those gaps tight. */
   header.top { row-gap: 8px; }
   .brand { row-gap: 0; }
   .board { padding-top: 2px; }
@@ -281,11 +280,19 @@ body.is-dragging .board { scroll-snap-type: none; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); overscroll-behavior-y: none; }
 [hidden] { display: none !important; }
-/* Status bar fade: on iPhone the system blurs a band a little taller than the
-   safe area under the status bar, which caught the top of the title. When
-   there is a top inset, add up to 18px more so the title clears it. Browsers
-   and desktops (inset 0) are unchanged. */
-header.top { padding-top: calc(14px + min(env(safe-area-inset-top, 0px), 18px)); }
+/* Status bar fade: the installed iPhone app blurs a band just below the
+   status bar. With the "default" status bar style the page starts under the
+   status bar, so safe-area-inset-top is 0 and can't be used to detect it.
+   Key off standalone display instead: drop the header 18px so the title
+   clears the blur, and trim the gaps below it so the lists barely move.
+   Browser tabs and desktop installs are unchanged. */
+@media (display-mode: standalone) and (pointer: coarse) {
+  header.top { padding-top: 32px; padding-bottom: 4px; }
+  .board { padding-top: 0; }
+}
+@media (display-mode: standalone) and (pointer: coarse) and (max-width: 520px) {
+  header.top { row-gap: 6px; }
+}
 
 .sync {
   display: inline-flex; align-items: center; gap: 6px; font-size: .82rem; color: var(--muted);
