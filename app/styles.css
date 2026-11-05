@@ -476,7 +476,9 @@ kbd {
    pan-x pan-y lets fingers scroll but turns off pinch and double-tap zoom; the grip's
    touch-action: none still wins for drags. overscroll-behavior keeps a list that hits
    its top or bottom from dragging the whole page along with it. */
-html, body { overflow: hidden; overscroll-behavior: none; touch-action: pan-x pan-y; }
+html, body { touch-action: pan-x pan-y; }
+/* The info pages (What's New, Support, Privacy, Terms) share this file and scroll normally. */
+html:not(:has(> body.page)), body:not(.page) { overflow: hidden; overscroll-behavior: none; }
 .board, .col-body { overscroll-behavior: contain; }
 /* iOS zooms in on any field under 16px when it gets focus. */
 @media (pointer: coarse) {
