@@ -7,8 +7,8 @@ This takes about fifteen minutes. You need a computer with [Node.js](https://nod
 ## 1. Get the code
 
 ```sh
-git clone https://github.com/TweetingBirds/now-and-then.git
-cd now-and-then/worker
+git clone https://github.com/TweetingBirds/now-or-later.git
+cd now-or-later/worker
 ```
 
 (Or download the repository as a ZIP from GitHub and open the `worker` folder in a terminal.)

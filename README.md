@@ -41,7 +41,7 @@ To share one board, two people use the same token: **Copy link for another devic
 
 ## Names
 
-The app is called **Now or Later** (it was Now and Then until 1.11). The repository, the old web address path, the Worker `now-and-then-sync`, the KV namespace `now-and-then` and the `NOW_AND_THEN` binding keep the old name, so nothing in Cloudflare or GitHub had to move.
+The app is called **Now or Later** (it was Now and Then until 1.11). The repository is `TweetingBirds/now-or-later` (renamed from `now-and-then`; GitHub redirects the old links). The Worker `now-and-then-sync`, the KV namespace `now-and-then` and the `NOW_AND_THEN` binding keep the old name, so nothing in Cloudflare had to move.
 
 ## Setup
 
