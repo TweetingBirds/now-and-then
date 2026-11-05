@@ -376,8 +376,8 @@ test("quick add skips archived lists", async () => {
 test("list colors can only be #rrggbb", async () => {
   const { e, sid } = await setUp();
   const nb = await get(e, NATE);
-  Object.assign(nb.lists.find(l => l.id === "groc"), { color: "#fff;background-image:url(https://x.example/p)", updatedAt: Date.now() });
-  nb.lists.push({ id: "mine", name: "Mine", color: "red", order: 3, updatedAt: Date.now() });
+  Object.assign(nb.lists.find(l => l.id === "groc"), { color: "#fff;background-image:url(https://x.example/p)", updatedAt: Date.now() + 1000 });
+  nb.lists.push({ id: "mine", name: "Mine", color: "red", order: 3, updatedAt: Date.now() + 1000 });
   await put(e, NATE, nb);
   const t = await get(e, TIFF);
   assert.equal(t.lists.find(l => l.id === "groc").color, "#a3a9b5");
