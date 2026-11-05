@@ -454,6 +454,25 @@ test("shared list links: listed, withdrawn, and dead once their maker leaves", a
   assert.equal((await call(e, "POST", "/shared/join", { token: linda.token, body: { code: a.code } })).status, 404);
 });
 
+test("a withdrawn link stops showing even while KV's list still has it", async () => {
+  const { e, sid } = await setUp();
+  const a = await (await call(e, "POST", `/shared/${sid}/invites`, { token: NATE })).json();
+  const b = await (await call(e, "POST", `/shared/${sid}/invites`, { token: NATE })).json();
+  // Real KV can list a key for up to a minute after it's deleted.
+  const kv = e.NOW_AND_THEN, realList = kv.list.bind(kv), stale = new Map(kv.m);
+  kv.list = async ({ prefix }) => ({ keys: [...stale.keys()].filter(k => k.startsWith(prefix)).sort().map(name => ({ name, metadata: stale.get(name).meta })), list_complete: true });
+  assert.equal((await call(e, "DELETE", `/shared/${sid}/invites/${a.code}`, { token: NATE })).status, 200);
+  let info = await (await call(e, "GET", `/shared/${sid}`, { token: NATE })).json();
+  assert.deepEqual(info.invites.map(i => i.code), [b.code]);
+  // And a link made a moment ago may not be listed yet: the app names it with ?also=.
+  const c = await (await call(e, "POST", `/shared/${sid}/invites`, { token: NATE })).json();
+  info = await (await call(e, "GET", `/shared/${sid}`, { token: NATE })).json();
+  assert.deepEqual(info.invites.map(i => i.code), [b.code]);
+  info = await (await call(e, "GET", `/shared/${sid}?also=${c.code},${a.code},nonsense`, { token: NATE })).json();
+  assert.deepEqual(info.invites.map(i => i.code).sort(), [b.code, c.code].sort(), "withdrawn and made-up codes stay out");
+  kv.list = realList;
+});
+
 test("the owner can take someone off a shared list, and it doesn't come back as a private copy", async () => {
   const { e, sid } = await setUp();
   const herPhone = await get(e, TIFF); // still has the shared list
