@@ -49,7 +49,7 @@ self.addEventListener("fetch", (e) => {
     e.respondWith(
       fetch(req, { cache: "no-cache" }).then((res) => {
         // At the old address (tweetingbirds.com/now-and-then/), GitHub redirects
-        // everything to now-and-then.tweetingbirds.com once the app moves. Keep
+        // everything to now-or-later.tweetingbirds.com once the app moves. Keep
         // serving the cached app here instead, so this device can still open it
         // and carry its lists over (the Move dialog in app.js).
         if (OLD_ADDRESS && (res.redirected || res.type === "opaqueredirect" || res.status === 404)) return cached(res);

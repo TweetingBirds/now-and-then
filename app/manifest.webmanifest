@@ -1,6 +1,6 @@
 {
-  "name": "Now and Then",
-  "short_name": "Now and Then",
+  "name": "Now or Later",
+  "short_name": "Now or Later",
   "description": "A notebook-style todo list: Now, Tomorrow, Later and Done.",
   "start_url": "./",
   "scope": "./",
