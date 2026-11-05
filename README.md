@@ -111,6 +111,7 @@ Owner boards (`TOKEN_*`) can't delete themselves, because the secret would keep 
 | --- | --- | --- |
 | `GET /data`, `PUT /data` | any | Read, or merge and save, the board. |
 | `DELETE /data?confirm=delete` | invited | Delete the board, its copies and its token. |
+| `POST /add` `{ text, to }` | any | Quick add: each line of `text` becomes a todo at the bottom of Now, or of the list `to` names (`tomorrow`, `later` or a list name). For iOS Shortcuts. |
 | `GET /snapshots`, `GET /snapshots/<id>`, `POST /snapshots` | any | Nightly copies (see Backups). |
 | `POST /join` `{code, name}` | none | Turn an invite into a board and token. |
 | `POST /invites` `{label, days}`, `GET /invites`, `DELETE /invites/<code>` | admin | Make, list and revoke invites. |

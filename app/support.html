@@ -140,6 +140,23 @@
         </div>
       </details>
 
+      <details id="quick-add">
+        <summary>Can I add a todo without opening the app?</summary>
+        <div>
+          <p>Yes. What works depends on the device.</p>
+          <p><strong>iPhone and iPad.</strong> Apple doesn't let Home Screen web apps appear in the share sheet or offer long-press shortcuts, so use the Shortcuts app instead. This needs sync turned on. In Settings, open <strong>Sync</strong> and find <strong>Quick add from Shortcuts</strong>. Then make a shortcut:</p>
+          <ol>
+            <li>Open Shortcuts, tap <strong>+</strong>, and name it something like <em>Add to Now</em>.</li>
+            <li>Add an <strong>Ask for Input</strong> action (Text) with the prompt <em>What needs doing?</em></li>
+            <li>Add a <strong>Get Contents of URL</strong> action. Paste the address from <strong>Copy address</strong> as the URL. Tap the arrow to show more: set Method to <strong>POST</strong>, add a header named <code>Authorization</code> with the value <code>Bearer</code>, a space, and the token from <strong>Copy access token</strong>. Set Request Body to <strong>JSON</strong> and add a Text field named <code>text</code> set to <em>Provided Input</em>.</li>
+            <li>Optional: add a field named <code>to</code> with <code>tomorrow</code>, <code>later</code> or a list's name to add somewhere other than Now.</li>
+          </ol>
+          <p>Now you can say "Hey Siri, Add to Now", put it on the Action button, Back Tap or a Lock Screen widget. To add from the share sheet, turn on <strong>Show in Share Sheet</strong> in the shortcut's details and use <em>Shortcut Input</em> instead of Ask for Input. Each line of text becomes its own todo, so a pasted list works too. The todo shows up in the app at its next sync.</p>
+          <p><strong>Android and Chrome on a computer.</strong> Once Now or Later is installed, it appears in the share sheet: share a link or some text to it and it lands in Now. Long-press the app icon (or right-click it in the Dock or taskbar) for <strong>Add to Now</strong>, <strong>Add to Tomorrow</strong> and <strong>Add to Later</strong>.</p>
+          <p><strong>Any device.</strong> Opening <code>now-or-later.tweetingbirds.com/?add=Buy%20milk</code> adds "Buy milk" to Now, and <code>&amp;to=tomorrow</code> picks another list. On iPhone, links open in Safari rather than the Home Screen app, and the two keep separate lists unless both are syncing, so the Shortcut above is the better choice there.</p>
+        </div>
+      </details>
+
       <h3>Sync and backups</h3>
 
       <details id="sync">
