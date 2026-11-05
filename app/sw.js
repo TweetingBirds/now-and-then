@@ -6,6 +6,8 @@
 const VERSION = "nat-__BUILD_NUMBER__-__BUILD_SHA__";
 const SHELL = ["./", "index.html", "styles.css", "styles.css?v=__BUILD_NUMBER__", "app.js?v=__BUILD_NUMBER__", "manifest.webmanifest", "pages.css", "pages.js", "whats-new.html", "support.html", "privacy.html", "terms.html", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/icon-maskable-512.png"];
 
+const OLD_ADDRESS = /^(www\.)?tweetingbirds\.(com|github\.io)$/.test(self.location.hostname);
+
 self.addEventListener("install", (e) => {
   // cache: "reload" skips the HTTP cache, which can still hold the previous build
   // for up to 10 minutes after a deploy.
@@ -43,11 +45,17 @@ self.addEventListener("fetch", (e) => {
   // cache, which GitHub Pages lets hold files for up to 10 minutes.
   if (url.origin === self.location.origin) {
     if (url.pathname.endsWith("/version.json")) return; // always straight from the network
+    const cached = (res) => caches.match(req).then((hit) => hit || caches.match("index.html")).then((hit) => hit || res || Response.error());
     e.respondWith(
       fetch(req, { cache: "no-cache" }).then((res) => {
+        // At the old address (tweetingbirds.com/now-and-then/), GitHub redirects
+        // everything to now-or-later.tweetingbirds.com once the app moves. Keep
+        // serving the cached app here instead, so this device can still open it
+        // and carry its lists over (the Move dialog in app.js).
+        if (OLD_ADDRESS && (res.redirected || res.type === "opaqueredirect" || res.status === 404)) return cached(res);
         if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
         return res;
-      }).catch(() => caches.match(req).then((hit) => hit || caches.match("index.html")))
+      }).catch(() => cached())
     );
   }
   // Anything else (the sync Worker) goes straight to the network.

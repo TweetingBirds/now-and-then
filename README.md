@@ -41,14 +41,16 @@ To share one board, two people use the same token: **Copy link for another devic
 
 ## Names
 
-The app is called **Now or Later** (it was Now and Then until 1.11). The repository, the web address path, the Worker `now-and-then-sync`, the KV namespace `now-and-then` and the `NOW_AND_THEN` binding keep the old name, so nothing in Cloudflare or GitHub had to move.
+The app is called **Now or Later** (it was Now and Then until 1.11). The repository, the old web address path, the Worker `now-and-then-sync`, the KV namespace `now-and-then` and the `NOW_AND_THEN` binding keep the old name, so nothing in Cloudflare or GitHub had to move.
 
 ## Setup
 
 ### 1. Turn on GitHub Pages
 
-In the repo, go to **Settings → Pages** and set **Source** to **GitHub Actions**. After the next push to `main`, the app is at
-`https://tweetingbirds.com/now-and-then/` (the TweetingBirds custom domain).
+In the repo, go to **Settings → Pages** and set **Source** to **GitHub Actions**. The app is served at
+`https://now-or-later.tweetingbirds.com/`, set as this repo's **Custom domain** on the same page (a `CNAME` file isn't used, because Pages deploys from Actions). DNS has a `CNAME` record `now-or-later` → `tweetingbirds.github.io`.
+
+It used to live at `https://tweetingbirds.com/now-and-then/`. GitHub now redirects that address to the subdomain. Browsers keep each address's storage separately, so a device that used the old address shows a **Move** dialog there: it opens the new address with that device's lists and sync settings in the link (after the `#`, gzipped, never sent to a server), and the new address saves them. `sw.js` keeps serving the cached app at the old address after the redirect starts, so devices can still move later. A device that never opened version 1.12 or later at the old address can't move this way: sync it again at the new address with its token or an invite, or restore a backup.
 
 ### 2. Connect Cloudflare
 
@@ -81,7 +83,7 @@ Open the app, tap **Settings**, and paste the Worker address and that person's t
 
 ## Invites
 
-Owners listed in `ADMINS` in `worker/wrangler.toml` (now `nate`) see **Invite people** in Settings → Sync. **Create invite link** asks the Worker for a one-time code and shares a link like `https://tweetingbirds.com/now-and-then/#join=<code>&sync=<worker address>`. The code and the Worker address sit after the `#`, so GitHub Pages never sees them.
+Owners listed in `ADMINS` in `worker/wrangler.toml` (now `nate`) see **Invite people** in Settings → Sync. **Create invite link** asks the Worker for a one-time code and shares a link like `https://now-or-later.tweetingbirds.com/#join=<code>&sync=<worker address>`. The code and the Worker address sit after the `#`, so GitHub Pages never sees them.
 
 Opening the link shows **Join Now or Later sync**, with an optional name for the board and the Worker's host name. **Join** calls `POST /join`, which deletes the invite, makes a new board and a new token, and returns the token once. The app saves it like a pasted token and uploads the lists already on that device. Invites expire after 14 days (up to 30) and Settings lists open ones with **Revoke**. The note on an invite ("Mom") is only for the person inviting; it's stored with the board so `GET /boards` can say who is who.
 
