@@ -63,7 +63,7 @@ Paste the token when it asks. Each `TOKEN_<NAME>` secret is one board. Every tok
 
 ## 6. Connect the app
 
-Open [Now or Later](https://now-or-later.tweetingbirds.com/), tap **Settings**, then **Sync**, open **Set up by hand**, and paste your Worker's address and your token. Tap **Save and sync**.
+Open [Now or Later](https://now-or-later.app/), tap **Settings**, then **Sync**, open **Set up by hand**, and paste your Worker's address and your token. Tap **Save and sync**.
 
 To add your other devices, tap **Copy link for another device** in Settings → Sync and open that link on each one. Each link works once, within a day, and gives that device its own token. **Advanced** lists those devices so you can sign out one you've lost. Removing a `TOKEN_<NAME>` secret signs out every device added from it, too.
 
