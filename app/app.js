@@ -9,7 +9,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.21.0";
+  const APP_VERSION = "1.22.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -1882,7 +1882,6 @@
       msg.className = "msg bad"; msg.textContent = e instanceof TypeError ? "Couldn't reach the sync service. Check the connection and try again." : e.message;
     }
   });
-  window.addEventListener("hashchange", readLink);
 
   // ---------- appearance (per device) ----------
   // Dark mode follows the system unless this device picked Light or Dark in Settings.
@@ -2546,6 +2545,38 @@
     if (!isField(document.activeElement) && (window.scrollX || window.scrollY)) window.scrollTo(0, 0);
   }, 150));
 
+  // ---------- arriving from the old address ----------
+  // The app moved from now-or-later.tweetingbirds.com to now-or-later.app. Browsers
+  // keep localStorage per address, so a small Worker at the old address (mover/ in
+  // the repo) packs that device's storage into #move=<payload> and sends it here.
+  // The payload sits after the #, so it never reaches a server.
+  const MOVE_KEYS = [BOARD_KEY, LOCAL_KEY, SYNCED_KEY];
+  async function readMovePayload(str) {
+    const kind = str.slice(0, 2);
+    const bytes = Uint8Array.from(atob(str.slice(2).replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+    let text;
+    if (kind === "z.") text = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+    else if (kind === "j.") text = new TextDecoder().decode(bytes);
+    else throw new Error("unknown move format");
+    const data = JSON.parse(text);
+    if (!data || data.v !== 1 || !data.keys || !looksLikeBoard(JSON.parse(data.keys[BOARD_KEY]))) throw new Error("nothing to move");
+    return data.keys;
+  }
+  async function readMove() {
+    const str = new URLSearchParams(location.hash.slice(1)).get("move");
+    if (!str) return false;
+    history.replaceState(null, "", location.pathname + location.search);
+    let keys;
+    try { keys = await readMovePayload(str); } catch (e) { toast("Your lists didn't come through from the old address. Download a backup there and restore it here.", 8000); return false; }
+    const theirs = JSON.parse(keys[LOCAL_KEY] || "{}");
+    if (theirs.syncToken && theirs.syncToken === local.syncToken && theirs.syncUrl === local.syncUrl) { toast("Your lists are already here.", 4000); return false; }
+    if (!local.pristine && !confirm("Replace the lists on this device with the ones from the old address? The lists here now will be lost unless they're synced.")) return false;
+    for (const k of MOVE_KEYS) if (keys[k] != null) localStorage.setItem(k, keys[k]);
+    location.reload();
+    return true;
+  }
+  window.addEventListener("hashchange", () => { readMove().then((moving) => { if (!moving) readLink(); }); });
+
   // ---------- boot ----------
   applyTheme();
   repairOrphans();
@@ -2556,7 +2587,7 @@
   // A new morning waits for the synced board first (see checkDay).
   checkDay().then(sync);
   checkForUpdate();
-  quickAdd(); readLink(); maybeWelcome();
+  readMove().then((moving) => { if (!moving) { quickAdd(); readLink(); maybeWelcome(); } });
   if (recovered === "synced") toast("This device's lists couldn't be read, so they're being loaded from sync.", 6000);
   else if (recovered === "local") toast("This device's lists couldn't be read. Restore a backup from Settings if you have one.", 8000);
 })();

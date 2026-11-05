@@ -52,9 +52,21 @@ The app is called **Now or Later** (it was Now and Then until 1.11). The reposit
 ### 1. Turn on GitHub Pages
 
 In the repo, go to **Settings → Pages** and set **Source** to **GitHub Actions**. The app is served at
-`https://now-or-later.tweetingbirds.com/`, set as this repo's **Custom domain** on the same page (a `CNAME` file isn't used, because Pages deploys from Actions). DNS has a `CNAME` record `now-or-later` → `tweetingbirds.github.io`.
+`https://now-or-later.app/`, set as this repo's **Custom domain** on the same page with **Enforce HTTPS** on (a `CNAME` file isn't used, because Pages deploys from Actions). The `now-or-later.app` zone is on Cloudflare, with every record set to **DNS only** (a gray cloud), because GitHub can't issue its certificate through Cloudflare's proxy:
 
-It used to live at `https://tweetingbirds.com/now-and-then/`, and GitHub redirects that address to the subdomain. Everyone has moved, so the 1.12 **Move** dialog was removed in 1.17.
+- `@` A: `185.199.108.153`, `185.199.109.153`, `185.199.110.153`, `185.199.111.153`
+- `@` AAAA: `2606:50c0:8000::153`, `2606:50c0:8001::153`, `2606:50c0:8002::153`, `2606:50c0:8003::153`
+- `www` CNAME: `tweetingbirds.github.io` (GitHub redirects www to the bare domain)
+
+### Old addresses
+
+The app lived at `https://tweetingbirds.com/now-and-then/` until 1.12 (GitHub redirects that to the current address), then at `https://now-or-later.tweetingbirds.com/` until 1.22. GitHub serves only one custom domain per repo, so the subdomain is served by a small Worker in `mover/` (`now-or-later-old-address`, a Workers custom domain on the `tweetingbirds.com` zone):
+
+- `/` reads that device's lists and sync settings (browsers keep storage per address, so a redirect alone would strand them) and opens `https://now-or-later.app/#move=<payload>`. The app there writes them into its own storage (`readMove` in `app/app.js`). Invite and device links keep their `#`, and quick-add links keep their `?add=`.
+- `/sw.js` is a service worker that deletes the old app's offline copy and unregisters itself.
+- Everything else gets a 301 to the same path on `now-or-later.app`.
+
+It deploys from `.github/workflows/old-address.yml` when `mover/` changes. To deploy it by hand: `cd mover && npx wrangler deploy`. Delete the old `now-or-later` CNAME in the `tweetingbirds.com` zone first; Cloudflare makes the record for the Worker itself. The API token needs **Workers Scripts: Edit**, **Workers Routes: Edit** and **DNS: Edit** on that zone.
 
 Every page has a Content Security Policy in a `<meta>` tag: scripts only from the site itself (plus a hash for the small inline theme script in `index.html`), styles from the site and Google Fonts, and network requests to the site or any `https:` address (the sync Worker can be anyone's). If you add an inline script, add its hash to the policy or move it into a file. Pages also set `referrer` to `same-origin`, so invite codes in a link never leak to another site.
 
@@ -89,7 +101,7 @@ Open the app, tap **Settings** → **Sync** → **Set up by hand**, and paste th
 
 ## Invites
 
-Owners listed in `ADMINS` in `worker/wrangler.toml` (now `nate`) see **Invite people** in Settings → Sync. **Create invite link** asks the Worker for a one-time code and shares a link like `https://now-or-later.tweetingbirds.com/#join=<code>&sync=<worker address>`. The code and the Worker address sit after the `#`, so GitHub Pages never sees them.
+Owners listed in `ADMINS` in `worker/wrangler.toml` (now `nate`) see **Invite people** in Settings → Sync. **Create invite link** asks the Worker for a one-time code and shares a link like `https://now-or-later.app/#join=<code>&sync=<worker address>`. The code and the Worker address sit after the `#`, so GitHub Pages never sees them.
 
 Opening the link shows **Join Now or Later sync**, with an optional name for the board and the Worker's host name. **Join** calls `POST /join`, which deletes the invite, makes a new board and a new token, and returns the token once. The app saves it like a pasted token and uploads the lists already on that device. Invites expire after 14 days (up to 30) and Settings lists open ones with **Revoke**. The note on an invite ("Mom") is only for the person inviting; it's stored with the board so `GET /boards` can say who is who.
 

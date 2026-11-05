@@ -1,0 +1,10 @@
+# Serves the app's old address, now-or-later.tweetingbirds.com, after the app moved
+# to now-or-later.app. See mover/worker.js and "Addresses" in the README.
+name = "now-or-later-old-address"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = false
+
+# Cloudflare makes the DNS record for this itself. Delete the old
+# now-or-later CNAME (to tweetingbirds.github.io) in the tweetingbirds.com zone first.
+routes = [{ pattern = "now-or-later.tweetingbirds.com", custom_domain = true }]

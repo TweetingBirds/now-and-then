@@ -1,0 +1,22 @@
+name: Deploy old-address Worker to Cloudflare
+
+# Serves now-or-later.tweetingbirds.com, which moves each device's lists to
+# now-or-later.app. See "Old addresses" in the README.
+on:
+  push:
+    branches: [main]
+    paths: ["mover/**", ".github/workflows/old-address.yml"]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Syntax check
+        run: node --input-type=module --check < mover/worker.js
+      - uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: mover
