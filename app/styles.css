@@ -228,6 +228,7 @@ header.top {
 .shelf-name small { color: var(--muted); font-size: .74rem; }
 .shelf-name:hover strong { text-decoration: underline; }
 .clear-filter { align-self: flex-start; margin: 4px; font-size: .85rem; }
+.more-done { flex: none; align-self: center; margin: 10px 4px 4px; font-size: .85rem; }
 
 .new-list {
   flex: 0 0 200px; align-self: stretch; max-height: 220px;

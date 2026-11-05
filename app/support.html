@@ -88,7 +88,7 @@
         <summary>Where did my finished todos go?</summary>
         <div>
           <p>A checked-off todo stays in its list for the rest of the day, then moves to <strong>Done</strong>, the last list on the right, grouped by the day you finished it. In Settings you can have finished todos move to Done right away instead.</p>
-          <p>Done keeps everything you've finished. Use its search box and filters to find an old todo, and tap ↩ beside one to put it back, unchecked, on the list it came from.</p>
+          <p>Done keeps everything you've finished. It shows the latest 100, with <strong>Show more</strong> below them. Todos finished more than three months ago are tucked away so the app stays quick: searching finds them, and <strong>Look further back</strong> at the bottom of Done shows them. Tap ↩ beside any todo to put it back, unchecked, on the list it came from.</p>
         </div>
       </details>
 
@@ -218,8 +218,9 @@
       <details id="backups">
         <summary>How do backups work?</summary>
         <div>
-          <p>In Settings under <strong>Backups</strong>, <strong>Download backup</strong> saves a file with every list, todo and Done item. On a phone, choose <strong>Save to Files</strong>. <strong>Restore from file…</strong> puts everything in that file back. <strong>Download CSV</strong> makes a spreadsheet you can open in Numbers or Excel, but it can't be restored.</p>
-          <p>When sync is on, the sync service also saves a copy each night your lists have changed, and at least once a week, and keeps each copy for 30 days. Settings lists those copies, and you can restore or download any of them. Before any restore, one more copy is saved so the restore can be undone the same way.</p>
+          <p>In Settings under <strong>Backups</strong>, <strong>Download backup</strong> saves a file with every list, todo and Done item, older ones included. On a phone, choose <strong>Save to Files</strong>. <strong>Restore from file…</strong> puts everything in that file back. <strong>Download CSV</strong> makes a spreadsheet you can open in Numbers or Excel, but it can't be restored.</p>
+          <p>When sync is on, the sync service also saves a copy each night your lists have changed, and at least once a week, and keeps each copy for 30 days. Settings lists those copies, and you can restore or download any of them. Before any restore, one more copy is saved so the restore can be undone the same way. If that copy can't be made, say you're offline, you're asked first. Right after a restore, <strong>Undo</strong> on the note at the bottom puts things back the way they were.</p>
+          <p>Nightly copies hold the last three months of Done. Older finished todos are kept separately and aren't affected by a restore.</p>
         </div>
       </details>
 

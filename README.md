@@ -9,6 +9,7 @@ A notebook-style todo list, made for Tiffany. It works the way her paper noteboo
 - Todos move between lists by dragging the ⋮⋮ handle, or with the ••• menu.
 - A list you added (not Now, Tomorrow or Later) can be archived once everything on it is checked: a toast offers **Archive list** when the last todo is checked, and the list's ••• menu has it too. Nothing archives on its own. Archived lists sit at the top of Done, don't count toward the 10, and **Use again** brings one back unchecked. Archiving a shared list archives it for everyone on it.
 - Deleting, moving or checking off a todo (or deleting a list, or putting a todo back from Done) shows a toast with **Undo** for a few seconds. Cmd+Z or Ctrl+Z works too while it's showing. Undo syncs like any other edit.
+- **Done** shows the newest 100 finished todos with **Show more**. Todos finished more than 90 days ago move off the board (see *Older Done* below); searching or **Look further back** brings them in.
 - **Done** can be searched and filtered by when a todo was finished (today, this week, this month) and which list it came from. The ↩ button on a finished todo puts it back, unchecked, on its list.
 - Dark mode follows the system, or pick Light or Dark per device in Settings. Phones give a small buzz when a todo is picked up and dropped (Android, and iPhone on iOS 18 or later).
 - On a Mac, keyboard shortcuts cover adding, moving and checking off todos. Press **?** to see them. A toggle at the top of that sheet makes the shortcuts that work anywhere (N, 1–9 and ?) need Option, for people who find single keys get in the way. Single keys are the default.
@@ -114,9 +115,22 @@ A shared list is a self-contained record (list, todos, members) referenced from 
 - **Colors.** List colors are checked against `#rrggbb` on the Worker and in the app; anything else becomes Pebble.
 - **Owner tokens** are compared by SHA-256 digest in constant time, and anything that isn't an owner secret or a well-formed `nt_`/`nd_` token is refused without a KV read.
 
+### Older Done
+
+Done keeps everything, and every edit redraws the board and syncs all of it, so a year of use made a phone slow (177 ms per checkbox at 2,000 Done todos) and the board heavy. Done todos whose `archivedDay` is more than 90 days ago move off the board:
+
+- **In the app**, `packOld()` moves them to `nat.old.v1` on the device at start-up, each morning and after each sync. Done draws at most 100 rows at first. Searching, or **Look further back**, adds the device's older todos plus the Worker's (`GET /old`, fetched once per visit). Putting one back puts it on the board again. Backups and the CSV include them.
+- **On the Worker**, every `PUT /data` moves the board's own old Done todos into `old:<board>`, including ones an older app still sends. Todos the device packed before the Worker ever had them (say sync was turned on later) ride along once in the PUT body's `old` array.
+- Todos on an archived list stay with the list, so **Use again** has them, and shared lists keep theirs. Keep `isOld()` in the Worker and `packOld()` in the app in step.
+- Nightly copies hold the board only. `old:<board>` is deleted with the board.
+
+### Clocks
+
+The newest stamp wins a merge, so a device whose clock is off used to win or lose edits it shouldn't. Every Worker response carries `X-Server-Time`. The app measures its offset from it (`local.clockOffset`, ignored under 2 seconds) and stamps edits with the Worker's time, and each stamp is later than any it has seen (up to 5 minutes ahead), so an edit made after seeing another device's always wins. The Worker restamps anything more than a day in the future.
+
 ### Deleting a board
 
-People who joined by invite see **Delete synced board…** in Settings. It calls `DELETE /data?confirm=delete`, which deletes `board:<id>`, every `snap:<id>:` copy, the token's `tok:` key and every device token made for the board, then leaves `gone:<hash>` (no other data) for 30 days. While that marker exists the token gets **410 Gone**, and the person's other devices turn sync off and say the board was deleted, instead of uploading it again. The app can also erase the lists on the device doing the delete.
+People who joined by invite see **Delete synced board…** in Settings. It calls `DELETE /data?confirm=delete`, which deletes `board:<id>`, every `snap:<id>:` copy, `old:<id>`, the token's `tok:` key and every device token made for the board, then leaves `gone:<hash>` (no other data) for 30 days. While that marker exists the token gets **410 Gone**, and the person's other devices turn sync off and say the board was deleted, instead of uploading it again. The app can also erase the lists on the device doing the delete.
 
 Owner boards (`TOKEN_*`) can't delete themselves, because the secret would keep working. Remove those by hand: `wrangler secret delete TOKEN_<NAME>`, then delete `board:<name>` in the KV dashboard (its snapshots expire within 30 days). An admin can delete an invited board for someone who emails in: `GET /boards` lists them, `DELETE /boards/<id>` removes one just like the person's own delete.
 
@@ -127,7 +141,8 @@ Owner boards (`TOKEN_*`) can't delete themselves, because the secret would keep 
 | `GET /data`, `PUT /data` | any | Read, or merge and save, the board. |
 | `DELETE /data?confirm=delete` | invited | Delete the board, its copies and its token. |
 | `POST /add` `{ text, to }` | any | Quick add: each line of `text` becomes a todo at the bottom of Now, or of the list `to` names (`tomorrow`, `later` or a list name). For iOS Shortcuts. |
-| `GET /snapshots`, `GET /snapshots/<id>`, `POST /snapshots` | any | Nightly copies (see Backups). |
+| `GET /snapshots`, `GET /snapshots/<id>`, `POST /snapshots` | any | Nightly copies (see Backups). A `POST` for an unchanged board within 5 minutes of its last copy returns that copy. |
+| `GET /old` | any | Done todos finished more than 90 days ago (see Older Done). |
 | `POST /devices`, `GET /devices`, `DELETE /devices/<id>` | any | Make a one-time device link, list devices, sign one out. |
 | `POST /devices/connect` `{code, label}` | none | Turn a device link into a device token. |
 | `POST /join` `{code, name}` | none | Turn an invite into a board and token. |

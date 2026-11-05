@@ -57,6 +57,9 @@
 // GET /snapshots lists a board's snapshots, GET /snapshots/<id> returns one, and
 // POST /snapshots takes one now. A token only ever sees its own board's snapshots.
 //
+// Older Done: Done todos finished more than OLD_DAYS ago move from the board to
+// "old:<board>" on each save, and GET /old returns them (see isOld below).
+//
 // Everything here stays inside Workers KV's free tier for a family-sized group: see
 // "Costs and limits" in the README.
 //
@@ -84,6 +87,9 @@ const INBOX_DAYS = 2;      // how long a quick add waits in the inbox (see inbox
 const DEVICE_HOURS = 24;   // life of a device link
 const SNAP_EVERY_DAYS = 7; // an unchanged board still gets a nightly copy this often
 const DEVICE_CODE = /^[A-Za-z0-9_-]{22}$/;
+const OLD_DAYS = 90;       // Done todos finished longer ago than this move to "old:<board>"
+const FUTURE_MS = 864e5;   // an edit stamped further ahead than this is from a wrong clock
+const SNAP_GAP_MS = 5 * 60_000; // one manual snapshot per board this often
 const DEVICE_ID = /^[a-f0-9]{64}$/;
 const COLOR = /^#[0-9a-f]{6}$/i;
 const DEFAULT_COLOR = "#a3a9b5";
@@ -185,6 +191,7 @@ export async function takeSnapshot(env, board, data, reason) {
     lists: live(data.lists).length,
     todos: live(data.todos).filter((t) => !t.archived).length,
     done: live(data.todos).filter((t) => t.archived).length,
+    fp: fingerprint(data),
   };
   await env.NOW_AND_THEN.put(`snap:${board}:${at}`, JSON.stringify(data), {
     expirationTtl: SNAPSHOT_DAYS * 86400,
@@ -251,6 +258,7 @@ export async function deleteBoard(env, board, hash) {
   await env.NOW_AND_THEN.delete("board:" + board);
   await env.NOW_AND_THEN.delete("inbox:" + board);
   await env.NOW_AND_THEN.delete("snaplast:" + board);
+  await env.NOW_AND_THEN.delete("old:" + board);
   // Asked from a device token: find the board's own token by its record.
   if (!hash && BOARD_ID.test(board)) {
     const k = (await listKeys(env, "tok:")).find((x) => x.metadata && x.metadata.board === board);
@@ -388,6 +396,18 @@ export async function putBoard(env, who, stored, incoming, syncedAt = 0) {
   const view = await openBoard(env, who.board, stored);
   const { docs } = view;
   let shared = view.shared.map((m) => ({ ...m }));
+  // Lists whose todos never move to old: archived ones, and shared ones.
+  const cut = oldCutoffDay();
+  const keepLists = new Set([...view.board.lists, ...(incoming.lists || [])].filter((l) => l && (l.archived || l.shared)).map((l) => l.id));
+  for (const doc of docs.values()) keepLists.add(doc.list.id);
+  // An older app still sends its old Done todos. They go straight to old, which
+  // also keeps them out of the stale-item check below.
+  const packing = (incoming.todos || []).filter((t) => isOld(t, cut, keepLists));
+  // Older Done the device packed away before the Worker had it (see oldToSend in the app).
+  for (const t of Array.isArray(incoming.old) ? incoming.old.slice(0, 20_000) : []) {
+    if (t && typeof t.id === "string" && t.archived === true && !t.deleted) packing.push(clampClock({ todos: [t] }).todos[0]);
+  }
+  if (packing.length) { const ids = new Set(packing.map((t) => t.id)); incoming = { ...incoming, todos: incoming.todos.filter((t) => !ids.has(t && t.id)) }; }
   const { lists: inLists, todos: inTodos, stale } = screenIncoming(view, docs, incoming, await readInbox(env, who.board), syncedAt);
   incoming = { ...incoming, lists: inLists, todos: inTodos };
   const merged = mergeBoards(view.board, incoming);
@@ -428,7 +448,13 @@ export async function putBoard(env, who, stored, incoming, syncedAt = 0) {
   }
   for (const [sid, doc] of docs) if (!leaving.has(sid)) doc.todos = pruneTombstones(pickNewest([into.get(sid)]));
 
-  const next = { version: 1, settings: merged.settings, lists, todos: pruneTombstones(own), shared };
+  const archivedNow = new Set(lists.filter((l) => l.archived && !l.deleted).map((l) => l.id));
+  for (const id of keepLists) if (!lists.some((l) => l.id === id && !l.archived)) archivedNow.add(id);
+  const ownTodos = pruneTombstones(own);
+  for (const t of ownTodos) if (isOld(t, cut, archivedNow)) packing.push(t);
+  const packedIds = new Set(packing.map((t) => t.id));
+  const next = { version: 1, settings: merged.settings, lists, todos: ownTodos.filter((t) => !packedIds.has(t.id) || !isOld(t, cut, archivedNow)), shared };
+  await addOld(env, who.board, packing.map((t) => cleanColors(t, "fromColor")));
   buryStale(next, stale);
   for (const sid of leaving) {
     await leaveShared(env, who.board, sid, docs.get(sid));
@@ -454,6 +480,7 @@ export async function putBoard(env, who, stored, incoming, syncedAt = 0) {
 //   that was offline for months, so it's dropped. A device that has never synced
 //   here sends no date, and everything it has is new to the board.
 function screenIncoming(view, docs, incoming, inbox, syncedAt = 0) {
+  incoming = clampClock(incoming);
   const cutoff = Math.min(Date.now() - TOMBSTONE_DAYS * 864e5, syncedAt);
   const knownLists = new Set(view.board.lists.map((l) => l.id));
   const knownTodos = new Set(view.board.todos.map((t) => t.id));
@@ -475,6 +502,38 @@ function buryStale(boardDoc, stale) {
   const has = (xs, id) => xs.some((x) => x.id === id);
   for (const l of stale.lists) if (!has(boardDoc.lists, l.id)) boardDoc.lists.push({ id: l.id, deleted: true, updatedAt: Math.max(Date.now(), stamp(l)) + 1 });
   for (const t of stale.todos) if (!has(boardDoc.todos, t.id)) boardDoc.todos.push({ id: t.id, deleted: true, updatedAt: Math.max(Date.now(), stamp(t)) + 1 });
+}
+
+// A device whose clock runs fast would win every tie for as long as it's ahead.
+// The app keeps its clock in step with the Worker's (X-Server-Time), so this only
+// catches a clock that's badly wrong: anything stamped more than a day ahead is
+// stamped now instead.
+function clampClock(incoming) {
+  const now = Date.now();
+  const fix = (x) => (x && typeof x === "object" && stamp(x) > now + FUTURE_MS ? { ...x, updatedAt: now } : x);
+  return { ...incoming, settings: fix(incoming.settings), lists: (incoming.lists || []).map(fix), todos: (incoming.todos || []).map(fix) };
+}
+
+// ---------- older Done ----------
+// Done keeps everything, so a board grows forever, and every save and refresh
+// carries all of it. Done todos finished more than OLD_DAYS ago move out of the
+// board into "old:<board>", which the app only asks for (GET /old) when someone
+// searches or looks further back. Todos on an archived list stay with the list,
+// so "Use again" still has them, and shared lists keep theirs.
+// Keep the rule in step with isOld() in app/app.js.
+const oldCutoffDay = () => new Date(Date.now() - OLD_DAYS * 864e5).toISOString().slice(0, 10);
+function isOld(t, cut, keepLists) {
+  return !!t && !t.deleted && t.archived === true && typeof t.archivedDay === "string" && t.archivedDay < cut && !keepLists.has(t.listId);
+}
+export async function readOld(env, board) {
+  const doc = await env.NOW_AND_THEN.get("old:" + board, "json");
+  return (doc && Array.isArray(doc.todos)) ? doc.todos : [];
+}
+async function addOld(env, board, todos) {
+  if (!todos.length) return;
+  const kept = await readOld(env, board);
+  const next = pickNewest([kept, todos]);
+  if (!sameJson(next, kept)) await env.NOW_AND_THEN.put("old:" + board, JSON.stringify({ todos: next }));
 }
 
 // After leaving, the board keeps tombstones for the list and its todos, so this
@@ -633,8 +692,9 @@ function cors(extra = {}) {
     "Access-Control-Allow-Origin": "*", // security rests on the token
     "Access-Control-Allow-Methods": "GET, PUT, POST, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Expect-Board, X-Synced-At",
-    "Access-Control-Expose-Headers": "X-Board, X-Board-Name, X-Board-Kind, X-Board-Admin",
+    "Access-Control-Expose-Headers": "X-Board, X-Board-Name, X-Board-Kind, X-Board-Admin, X-Server-Time",
     "Access-Control-Max-Age": "86400",
+    "X-Server-Time": String(Date.now()), // the app keeps its clock in step with this
     ...extra,
   };
 }
@@ -864,6 +924,11 @@ export default {
     }
 
     const snap = path.match(/\/snapshots(?:\/([^/]+))?$/);
+    if (path.endsWith("/old")) {
+      if (request.method !== "GET") return json({ error: "method not allowed" }, 405);
+      const who = await whoIs(request, env);
+      return authError(who) || json({ todos: await readOld(env, who.board) }, 200, boardHeaders(who));
+    }
     if (path.endsWith("/data") || snap) {
       const writes = request.method !== "GET";
       const who = await whoIs(request, env, { fresh: writes });
@@ -881,7 +946,11 @@ export default {
           return got ? json(got, 200, hdrs) : json({ error: "not found" }, 404, hdrs);
         }
         if (request.method === "POST" && !id) {
+          // A leaked token or a looping device could otherwise spend the day's KV writes,
+          // so an unchanged board within a few minutes of its last copy reuses that copy.
+          const last = (await listSnapshots(env, who.board))[0];
           const view = await openBoard(env, who.board, await env.NOW_AND_THEN.get(KEY, "json"));
+          if (last && last.fp === fingerprint(view.board) && Date.now() - Date.parse(last.at || last.id) < SNAP_GAP_MS) return json({ ...last, reused: true }, 200, hdrs);
           const reason = (url.searchParams.get("reason") || "manual").replace(/[^a-z -]/gi, "").slice(0, 30) || "manual";
           return json(await takeSnapshot(env, who.board, view.board, reason), 200, hdrs);
         }
