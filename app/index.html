@@ -39,6 +39,7 @@
       <button class="btn" id="openSettings" type="button">Settings</button>
     </div>
   </header>
+  <nav class="list-tabs" id="listTabs" aria-label="Jump to a list"></nav>
   <main class="board" id="board"></main>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
@@ -124,18 +125,22 @@
       <!-- Sync page: connect, add devices; the rarer things sit under Advanced. -->
       <div class="pane" data-pane="sync" data-title="Sync" hidden>
         <section class="group">
-          <p>Got an invite link? Open it on this device and sync sets itself up. Or paste a sync address and access token here. <a href="support.html#sync">How sync works</a>. Leave both empty to keep your lists on this device only.</p>
-          <div class="card pad">
-            <label class="field">Sync address
-              <input type="url" id="syncUrl" placeholder="https://your-sync.example.workers.dev" autocomplete="off" spellcheck="false">
-            </label>
-            <label class="field">Access token
-              <input type="password" id="syncToken" autocomplete="off" spellcheck="false">
-            </label>
-            <div class="row">
-              <button class="btn primary" type="button" id="saveSync">Save and sync</button>
+          <p>Have an invite link? Open it on this phone and sync sets itself up. Adding another of your own devices? Use <strong>Copy link for another device</strong> on one that already syncs. <a href="support.html#sync">How sync works</a></p>
+          <details class="by-hand" id="byHand">
+            <summary>Set up by hand</summary>
+            <p>If whoever runs your sync service gave you an address and an access token, paste them here. Leave both empty to keep your lists on this device only.</p>
+            <div class="card pad">
+              <label class="field">Sync address
+                <input type="url" id="syncUrl" placeholder="https://your-sync.example.workers.dev" autocomplete="off" spellcheck="false">
+              </label>
+              <label class="field">Access token
+                <input type="password" id="syncToken" autocomplete="off" spellcheck="false">
+              </label>
+              <div class="row">
+                <button class="btn primary" type="button" id="saveSync">Save and sync</button>
+              </div>
             </div>
-          </div>
+          </details>
           <div class="msg" id="syncMsg" role="status"></div>
         </section>
 
@@ -169,7 +174,7 @@
 
         <section class="group invites" id="invites" hidden aria-labelledby="gInvites">
           <h3 id="gInvites">Invite people</h3>
-          <p>An invite link gives someone their own board on this Worker. It works once and expires after 14 days. The note is only for you, to remember who it's for.</p>
+          <p>An invite link gives someone their own synced lists on this sync service. It works once and expires after 14 days. The note is only for you, to remember who it's for.</p>
           <div class="row start invite-new">
             <input type="text" id="inviteLabel" placeholder="Who it's for (optional)" maxlength="40" autocomplete="off" aria-label="Who the invite is for">
             <button class="btn" type="button" id="inviteMake">Create invite link</button>
@@ -209,7 +214,7 @@
         </section>
         <section class="group cloud-backups" id="cloudBackups" hidden aria-labelledby="gNightly">
           <h3 id="gNightly">Nightly copies</h3>
-          <p id="cloudInfo">The sync Worker saves a copy of your board each night it changes, and at least once a week, and keeps it for 30 days.</p>
+          <p id="cloudInfo">The sync service saves a copy of your board each night it changes, and at least once a week, and keeps it for 30 days.</p>
           <div class="row start">
             <select id="snapList" aria-label="Saved copies"></select>
             <button class="btn" type="button" id="snapRestore">Restore…</button>
@@ -294,7 +299,7 @@
         <ul class="welcome-list">
           <li><span class="dot" style="--c:#f2b84b"></span><span><strong>Check it off.</strong> Finished todos stay in their list for the rest of the day, then move to Done the next morning.</span></li>
           <li><span class="dot" style="--c:#7b9cff"></span><span><strong>Tomorrow turns into Now.</strong> Each morning, anything still in Tomorrow moves into Now. Nothing goes overdue.</span></li>
-          <li><span class="dot" style="--c:#5cc6a7"></span><span><strong>Make it yours.</strong> Drag todos between lists by their handle. Tap a list's name to rename it, or its colored dot to recolor it. You can have up to 10 lists.</span></li>
+          <li><span class="dot" style="--c:#5cc6a7"></span><span><strong>Make it yours.</strong> Double-tap a todo to change its words, or use its ••• menu. Drag todos between lists by their handle. Tap a list's name to rename it, or its colored dot to recolor it. You can have up to 10 lists.</span></li>
         </ul>
         <p class="welcome-note">You can change how mornings work in Settings.</p>
       </section>

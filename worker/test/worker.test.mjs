@@ -556,3 +556,14 @@ test("older Done a device packed before it synced arrives in the PUT's old array
   assert.equal((await r.json()).todos.length, 0);
   assert.deepEqual((await (await call(e, "GET", "/old", { token: NATE })).json()).todos.map(t => t.id), ["o1"]);
 });
+
+test("a save can't hold more than the limits, and long text is cut", async () => {
+  const e = env();
+  const many = Array.from({ length: 30_001 }, (_, i) => ({ id: "t" + i, listId: "l1", text: "x", updatedAt: 1 }));
+  let r = await call(e, "PUT", "/data", { token: NATE, body: { lists: [], todos: many } });
+  assert.equal(r.status, 413);
+  r = await call(e, "PUT", "/data", { token: NATE, body: { lists: [{ id: "l1", name: "N".repeat(500), updatedAt: 1 }], todos: [{ id: "t", listId: "l1", text: "y".repeat(9000), updatedAt: 1 }] } });
+  const b = await r.json();
+  assert.equal(b.todos[0].text.length, 5000);
+  assert.equal(b.lists[0].name.length, 100);
+});

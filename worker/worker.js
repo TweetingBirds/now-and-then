@@ -90,6 +90,11 @@ const DEVICE_CODE = /^[A-Za-z0-9_-]{22}$/;
 const OLD_DAYS = 90;       // Done todos finished longer ago than this move to "old:<board>"
 const FUTURE_MS = 864e5;   // an edit stamped further ahead than this is from a wrong clock
 const SNAP_GAP_MS = 5 * 60_000; // one manual snapshot per board this often
+// Limits on what one save can hold, far above real use (a busy year is a few
+// thousand todos), so a leaked token or a buggy device can't fill KV.
+const MAX_ITEMS = { lists: 500, todos: 30_000, old: 20_000 };
+const TEXT_MAX = 5000;     // characters in a todo
+const NAME_MAX = 100;      // characters in a list name
 const DEVICE_ID = /^[a-f0-9]{64}$/;
 const COLOR = /^#[0-9a-f]{6}$/i;
 const DEFAULT_COLOR = "#a3a9b5";
@@ -404,7 +409,7 @@ export async function putBoard(env, who, stored, incoming, syncedAt = 0) {
   // also keeps them out of the stale-item check below.
   const packing = (incoming.todos || []).filter((t) => isOld(t, cut, keepLists));
   // Older Done the device packed away before the Worker had it (see oldToSend in the app).
-  for (const t of Array.isArray(incoming.old) ? incoming.old.slice(0, 20_000) : []) {
+  for (const t of Array.isArray(incoming.old) ? incoming.old.slice(0, MAX_ITEMS.old) : []) {
     if (t && typeof t.id === "string" && t.archived === true && !t.deleted) packing.push(clampClock({ todos: [t] }).todos[0]);
   }
   if (packing.length) { const ids = new Set(packing.map((t) => t.id)); incoming = { ...incoming, todos: incoming.todos.filter((t) => !ids.has(t && t.id)) }; }
@@ -510,7 +515,13 @@ function buryStale(boardDoc, stale) {
 // stamped now instead.
 function clampClock(incoming) {
   const now = Date.now();
-  const fix = (x) => (x && typeof x === "object" && stamp(x) > now + FUTURE_MS ? { ...x, updatedAt: now } : x);
+  const fix = (x) => {
+    if (!x || typeof x !== "object") return x;
+    if (stamp(x) > now + FUTURE_MS) x = { ...x, updatedAt: now };
+    if (typeof x.text === "string" && x.text.length > TEXT_MAX) x = { ...x, text: x.text.slice(0, TEXT_MAX) };
+    if (typeof x.name === "string" && x.name.length > NAME_MAX) x = { ...x, name: x.name.slice(0, NAME_MAX) };
+    return x;
+  };
   return { ...incoming, settings: fix(incoming.settings), lists: (incoming.lists || []).map(fix), todos: (incoming.todos || []).map(fix) };
 }
 
@@ -984,6 +995,9 @@ export default {
         const { value: incoming, error } = await readJson(request);
         if (error) return error;
         if (!incoming || !Array.isArray(incoming.lists) || !Array.isArray(incoming.todos)) return json({ error: "not a board" }, 400, hdrs);
+        for (const k of Object.keys(MAX_ITEMS)) {
+          if (Array.isArray(incoming[k]) && incoming[k].length > MAX_ITEMS[k]) return json({ error: "too many " + k }, 413, hdrs);
+        }
         const syncedAt = Number(request.headers.get("X-Synced-At")) || 0;
         return json(await putBoard(env, who, stored, incoming, syncedAt), 200, hdrs);
       }
