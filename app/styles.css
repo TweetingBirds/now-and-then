@@ -253,6 +253,9 @@ header.top {
 .pop .lbl { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 4px 8px 2px; }
 .pop button.item { text-align: left; border: none; background: none; padding: 7px 8px; border-radius: 6px; display: flex; gap: 8px; align-items: center; }
 .pop button.item:hover { background: color-mix(in oklab, var(--ink) 7%, transparent); }
+/* Move list left on the first list, say: grayed out, and nothing happens on hover or tap. */
+.pop button.item:disabled { opacity: .4; cursor: default; }
+.pop button.item:disabled:hover { background: none; }
 .pop .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .pop .danger { color: var(--delete); }
 .swatches { display: grid; grid-template-columns: repeat(6, 26px); gap: 6px; padding: 6px 8px; }
@@ -630,6 +633,13 @@ body:has(dialog.welcome[open]) { overflow: hidden; }
 .settings .msg.device-msg.bad { color: var(--waiting-ink); }
 .settings .people { display: flex; flex-direction: column; gap: 10px; }
 .settings .people h3 { margin-top: 6px; }
+.settings .new-link { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in oklab, var(--accent) 7%, var(--surface)); }
+.settings .new-link p { color: var(--ink); }
+.settings .new-link input { font-size: .85rem; color: var(--muted); }
+.settings .row.split { justify-content: space-between; align-items: center; }
+dialog.settings.confirm { width: min(380px, calc(100vw - 32px)); }
+dialog.settings.confirm .settings-head { padding: 14px 20px; }
+dialog.settings.confirm p { color: var(--ink); font-size: .95rem; }
 .keys .keys-alt { display: flex; align-items: center; gap: 8px; font-size: .9rem; color: var(--ink); padding: 4px 0 6px; }
 .keys .keys-alt input { width: 18px; height: 18px; margin: 0; }
 .keylist kbd.opt[hidden] { display: none; }

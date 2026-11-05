@@ -275,6 +275,22 @@
     </form>
   </dialog>
 
+  <!-- Asks before something like archiving a list. Filled in by ask() in app.js. -->
+  <dialog class="settings join confirm" id="askDlg" aria-labelledby="askTitle" aria-describedby="askText">
+    <form method="dialog">
+      <div class="settings-head">
+        <h2 id="askTitle"></h2>
+      </div>
+      <div class="settings-body">
+        <p id="askText"></p>
+        <div class="row">
+          <button class="btn" value="cancel" id="askNo" formnovalidate>Cancel</button>
+          <button class="btn primary" value="ok" id="askYes">OK</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
   <!-- First visit only: a short welcome. Shown when this device had no lists yet. -->
   <dialog class="welcome" id="welcome" aria-labelledby="welcomeTitle">
     <form method="dialog">

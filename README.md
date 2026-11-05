@@ -7,7 +7,7 @@ A notebook-style todo list, made for Tiffany. It works the way her paper noteboo
 - Each morning, unfinished Tomorrow todos move into Now (this can be turned off in Settings).
 - Lists can be renamed, recolored, reordered and added, up to 10.
 - Todos move between lists by dragging the ⋮⋮ handle, or with the ••• menu.
-- A list you added (not Now, Tomorrow or Later) can be archived once everything on it is checked: a toast offers **Archive list** when the last todo is checked, and the list's ••• menu has it too. Nothing archives on its own. Archived lists sit at the top of Done, don't count toward the 10, and **Use again** brings one back unchecked. Archiving a shared list archives it for everyone on it.
+- A list you added (not Now, Tomorrow or Later) can be archived once everything on it is checked: a toast offers **Archive list** when the last todo is checked, and the list's ••• menu has it too (it asks first). Nothing archives on its own. Archived lists sit at the top of Done, don't count toward the 10, and **Use again** brings one back unchecked. Archiving a shared list archives it for everyone on it.
 - Deleting, moving or checking off a todo (or deleting a list, or putting a todo back from Done) shows a toast with **Undo** for a few seconds. Cmd+Z or Ctrl+Z works too while it's showing. Undo syncs like any other edit.
 - **Done** shows the newest 100 finished todos with **Show more**. Todos finished more than 90 days ago move off the board (see *Older Done* below); searching or **Look further back** brings them in.
 - **Done** can be searched and filtered by when a todo was finished (today, this week, this month) and which list it came from. The ↩ button on a finished todo puts it back, unchecked, on its list.

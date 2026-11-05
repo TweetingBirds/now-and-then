@@ -9,7 +9,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.20.0";
+  const APP_VERSION = "1.21.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -850,8 +850,7 @@
       el("button", { class: "item", onclick: () => { closePop(); const i = document.getElementById("name-" + list.id); i.focus(); i.select(); } }, "Rename"),
       el("button", { class: "item", disabled: idx === 0, onclick: () => swapLists(list, ls[idx - 1]) }, "Move list left"),
       el("button", { class: "item", disabled: idx === ls.length - 1, onclick: () => swapLists(list, ls[idx + 1]) }, "Move list right"),
-      !list.role ? el("button", { class: "item", disabled: !canArchive(list), title: canArchive(list) ? "" : "Check off everything on it first", onclick: () => archiveNow(list) }, "Archive list") : null,
-      !list.role && !canArchive(list) ? el("div", { class: "lbl shared-lbl" }, count ? "Check off everything on it to archive it." : "Add and check off todos to archive it.") : null,
+      !list.role ? el("button", { class: "item", onclick: () => askArchive(list) }, "Archive list…") : null,
       canShare ? el("button", { class: "item", onclick: () => { closePop(); shareList(list); } }, "Share list…") : null,
       list.shared ? el("button", { class: "item", onclick: () => { closePop(); shareList(list); } }, "Invite someone…") : null,
       list.shared ? el("button", { class: "item", onclick: () => { closePop(); manageShared(list); } }, "People and links…") : null,
@@ -876,6 +875,43 @@
         toast(`Deleted ${list.name}`, undo);
       } }, "Yes, delete " + list.name),
     );
+  }
+
+  // A small yes-or-no box (askDlg). Resolves true for the main button. With no
+  // `no`, it only has the one button, for when there's nothing to choose.
+  const askDlg = document.getElementById("askDlg");
+  function ask({ title, text, yes = "OK", no = "Cancel", danger = false }) {
+    document.getElementById("askTitle").textContent = title;
+    document.getElementById("askText").textContent = text;
+    const yesBtn = document.getElementById("askYes"), noBtn = document.getElementById("askNo");
+    yesBtn.textContent = yes; yesBtn.classList.toggle("danger", danger);
+    noBtn.style.display = no ? "" : "none"; if (no) noBtn.textContent = no;
+    askDlg.returnValue = "";
+    askDlg.showModal();
+    (no ? noBtn : yesBtn).focus();
+    return new Promise(done => askDlg.addEventListener("close", () => done(askDlg.returnValue === "ok"), { once: true }));
+  }
+
+  // The ••• menu's Archive list: says what will happen and asks first, or, when
+  // something on the list isn't checked yet, says what to do instead.
+  async function askArchive(list) {
+    closePop();
+    const left = todosIn(list.id).filter(t => !t.done).length;
+    if (!canArchive(list)) {
+      await ask(left
+        ? { title: `${list.name} isn't finished`, text: `${left} todo${left === 1 ? " is" : "s are"} still unchecked. Check off everything on it, then archive it.`, no: null }
+        : { title: `Nothing on ${list.name} yet`, text: "Archiving is for a finished list, like a packing list after the trip. Add todos, check them all off, then archive it.", no: null });
+      return;
+    }
+    const n = todosIn(list.id).length;
+    const ok = await ask({
+      title: `Archive ${list.name}?`,
+      text: `It comes off the board and goes to Done with its ${n} todo${n === 1 ? "" : "s"}.` +
+        (list.shared ? " It's archived for everyone it's shared with." : "") +
+        " To bring it back, tap Use again under Archived lists in Done.",
+      yes: "Archive list",
+    });
+    if (ok) archiveNow(list);
   }
 
   // Archives a list whose todos are all checked: it and its todos go to Done. On a
@@ -951,14 +987,33 @@
   }
   const canUseShared = () => syncConfigured() && local.synced && !local.otherBoard;
 
+  // Starts copying text that isn't known yet. Safari only lets a page copy during
+  // the tap itself, so the copy begins now and the text follows once the sync
+  // service has made the link. Resolves true if the link ended up copied.
+  function copySoon(text) {
+    try {
+      if (window.ClipboardItem && navigator.clipboard?.write) {
+        const blob = text.then(t => new Blob([t], { type: "text/plain" }));
+        return navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]).then(() => true, () => false);
+      }
+    } catch (e) {}
+    return text.then(t => navigator.clipboard.writeText(t)).then(() => true, () => false);
+  }
+
   // Makes the list shared if it isn't yet, then a one-time link for someone else.
+  // The link is copied right away, and People and links opens with it and what to
+  // do next, so the instructions don't vanish with a toast.
   async function shareList(list) {
     if (!canUseShared()) {
+      if (peopleDlg.open) peopleDlg.close();
       openSettingsTo("sync");
       toast("Sharing a list needs sync. Turn it on here first.", 5000);
       return;
     }
     if (!navigator.onLine) { toast("You're offline. Sharing needs a connection.", 4000); return; }
+    let give, fail;
+    const linkText = new Promise((res, rej) => { give = res; fail = rej; });
+    const copied = copySoon(linkText);
     toast(list.shared ? "Making a link…" : `Sharing ${list.name}…`, 8000);
     try {
       let sid = list.shared;
@@ -970,13 +1025,12 @@
         await sync();
       }
       const inv = await sharedFetch("/" + encodeURIComponent(sid) + "/invites", { method: "POST" });
-      const name = (listById(list.id) || list).name;
-      const how = await shareLink(appLink({ share: inv.code, sync: workerBase() }), `Join my ${name} list`);
-      const until = shortDate(inv.expires);
-      if (how === "copied") toast(`Link copied. Send it to the person you're sharing ${name} with. It works once, until ${until}.`, 7000);
-      else if (how === "shared") toast(`Link sent. It works once, until ${until}.`, 5000);
-      else hideToast();
+      const link = appLink({ share: inv.code, sync: workerBase() });
+      give(link);
+      hideToast();
+      manageShared(listById(list.id) || list, { code: inv.code, link, expires: inv.expires, copied }, sid);
     } catch (e) {
+      fail(e);
       const msg = e.code === "full" ? "This sync service has as many shared lists as it allows." :
         e.code === "can't share this list" ? "Now and Tomorrow can't be shared, because each morning moves todos between them. Make a new list to share." :
         e instanceof TypeError ? "Couldn't reach the sync service." : e.message;
@@ -984,21 +1038,25 @@
     }
   }
 
-  // People and links: who's on a shared list, which of its links are still open (any
-  // of them can be withdrawn), and, for the list's owner, taking someone off it.
+  // People and links: the place to manage a shared list. A link just made (`fresh`)
+  // sits at the top with what to do with it and a Copy link button. Below are who's
+  // on the list, a button for another link, and the links nobody has used yet (any
+  // of them can be withdrawn). The list's owner can also take someone off it.
   const peopleDlg = document.getElementById("peopleDlg");
-  async function manageShared(list) {
+  async function manageShared(list, fresh = null, sid = list.shared) {
     if (!canUseShared()) { openSettingsTo("sync"); return; }
     const title = document.getElementById("peopleTitle"), body = document.getElementById("peopleBody"), msg = document.getElementById("peopleMsg");
     title.textContent = list.name;
-    body.replaceChildren(el("p", {}, "Loading…"));
     msg.textContent = ""; msg.className = "msg";
+    const freshBox = fresh ? newLinkBox(list.name, fresh) : null;
+    body.replaceChildren(...[freshBox, el("p", {}, "Loading…")].filter(Boolean));
     if (!peopleDlg.open) peopleDlg.showModal();
-    const sid = list.shared;
+    if (freshBox) freshBox.querySelector(".copy-link").focus();
     async function load() {
       let info;
       try { info = await sharedFetch("/" + encodeURIComponent(sid)); }
-      catch (e) { body.replaceChildren(el("p", {}, e instanceof TypeError ? "Couldn't reach the sync service." : e.message)); return; }
+      catch (e) { body.replaceChildren(...[freshBox, el("p", {}, e instanceof TypeError ? "Couldn't reach the sync service." : e.message)].filter(Boolean)); return; }
+      const keepFresh = freshBox && info.invites.some(i => i.code === fresh.code) ? freshBox : null;
       const people = el("ul", { class: "invite-list" }, info.members.map(m => el("li", {},
         el("span", {}, m.board === info.me ? `${m.name} (you)` : m.name),
         info.owner && m.board !== info.me ? el("button", { class: "btn danger", type: "button", onclick: async (ev) => {
@@ -1008,19 +1066,56 @@
         } }, "Remove") : null)));
       const links = info.invites.length
         ? el("ul", { class: "invite-list" }, info.invites.map(i => el("li", {},
-            el("span", {}, `${i.mine ? "Your link" : `${i.byName || "Someone"}'s link`} · works until ${shortDate(i.expires)}`),
+            el("span", {}, `${fresh && i.code === fresh.code ? "Your new link" : i.mine ? "Your link" : `${i.byName || "Someone"}'s link`} · works until ${shortDate(i.expires)}`),
             el("button", { class: "btn", type: "button", onclick: async (ev) => {
               ev.currentTarget.disabled = true;
-              try { await sharedFetch("/" + encodeURIComponent(sid) + "/invites/" + encodeURIComponent(i.code), { method: "DELETE" }); msg.textContent = "Link withdrawn. It won't work anymore."; load(); }
+              try { await sharedFetch("/" + encodeURIComponent(sid) + "/invites/" + encodeURIComponent(i.code), { method: "DELETE" }); msg.className = "msg"; msg.textContent = "Link withdrawn. It won't work anymore."; load(); }
               catch (e) { msg.className = "msg bad"; msg.textContent = "Couldn't withdraw it: " + e.message; }
             } }, "Withdraw"))))
-        : el("p", {}, "No open links. Invite someone… in the list's ••• menu makes one.");
+        : el("p", {}, "No open links. Each link works for one person, so make one for each person you invite.");
+      const live = listById(list.id) || list;
       body.replaceChildren(...[
+        keepFresh,
         el("h3", {}, "People"), people,
         info.owner ? null : el("p", { class: "note" }, `${info.members[0].name} has been on it longest, so they can take people off it.`),
+        el("div", { class: "row start" }, el("button", { class: "btn", type: "button", onclick: () => shareList({ ...live, shared: sid }) }, keepFresh ? "Invite someone else" : "Invite someone")),
         el("h3", {}, "Links not used yet"), links].filter(Boolean));
     }
     load();
+  }
+
+  // The box for a link just made: what to do with it, the link itself, and Copy
+  // link (it's already copied; the button says so and copies it again if tapped).
+  function newLinkBox(name, fresh) {
+    const copyBtn = el("button", { class: "btn primary copy-link", type: "button" }, "Copy link");
+    let timer;
+    const showCopied = () => {
+      copyBtn.textContent = "✓ Copied";
+      clearTimeout(timer);
+      timer = setTimeout(() => { copyBtn.textContent = "Copy link"; }, 4000);
+    };
+    const field = el("input", { type: "text", readonly: true, value: fresh.link, "aria-label": "Invite link", onfocus: e => e.target.select() });
+    const what = el("p", {});
+    const say = (copied) => {
+      what.textContent = (copied ? "The link is copied. " : "") +
+        `Paste it into a text or email to the person you're sharing ${name} with. When they open it and tap Add list, ${name} shows up on their board, and you'll both see each other's changes.`;
+    };
+    say(false);
+    copyBtn.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(fresh.link); showCopied(); say(true); }
+      catch (e) { field.focus(); field.select(); what.textContent = "Couldn't copy it here. The link is selected below, so copy it from there."; }
+    });
+    fresh.copied.then(ok => { if (ok && copyBtn.isConnected) { showCopied(); say(true); } });
+    const canShare = navigator.share && matchMedia("(pointer: coarse)").matches;
+    return el("div", { class: "new-link", role: "group", "aria-label": "Your new invite link" },
+      what,
+      field,
+      el("div", { class: "row split" },
+        el("span", { class: "note" }, `Works once, until ${shortDate(fresh.expires)}.`),
+        el("span", { class: "row" },
+          canShare ? el("button", { class: "btn", type: "button", onclick: () => navigator.share({ title: `Join my ${name} list`, url: fresh.link }).catch(() => {}) }, "Share…") : null,
+          copyBtn)),
+    );
   }
 
   async function leaveList(list) {
