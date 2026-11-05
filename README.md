@@ -1,4 +1,4 @@
-# Now and Then
+# Now or Later
 
 A notebook-style todo list, made for Tiffany. It works the way her paper notebook does:
 
@@ -39,6 +39,10 @@ Each person has their own board and their own access token. There are two kinds 
 
 To share one board, two people use the same token: **Copy link for another device** in Settings makes a link that carries it.
 
+## Names
+
+The app is called **Now or Later** (it was Now and Then until 1.11). The repository, the web address path, the Worker `now-and-then-sync`, the KV namespace `now-and-then` and the `NOW_AND_THEN` binding keep the old name, so nothing in Cloudflare or GitHub had to move.
+
 ## Setup
 
 ### 1. Turn on GitHub Pages
@@ -58,7 +62,7 @@ Add these as repository secrets under **Settings → Secrets and variables → A
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → Workers & Pages → the Account ID on the right. |
 
 Then run **Actions → Deploy sync Worker to Cloudflare → Run workflow**. The Worker is deployed as `now-and-then-sync`, at
-`https://now-and-then-sync.<your-subdomain>.workers.dev`. Opening that address in a browser shows "Now and Then sync is running."
+`https://now-and-then-sync.<your-subdomain>.workers.dev`. Opening that address in a browser shows "Now or Later sync is running."
 
 Each person's access token is a **Worker secret**, not a repo secret. Make one long random string per person (for example `openssl rand -hex 32`) and set it from `worker/`:
 
@@ -79,7 +83,7 @@ Open the app, tap **Settings**, and paste the Worker address and that person's t
 
 Owners listed in `ADMINS` in `worker/wrangler.toml` (now `nate`) see **Invite people** in Settings → Sync. **Create invite link** asks the Worker for a one-time code and shares a link like `https://tweetingbirds.com/now-and-then/#join=<code>&sync=<worker address>`. The code and the Worker address sit after the `#`, so GitHub Pages never sees them.
 
-Opening the link shows **Join Now and Then sync**, with an optional name for the board and the Worker's host name. **Join** calls `POST /join`, which deletes the invite, makes a new board and a new token, and returns the token once. The app saves it like a pasted token and uploads the lists already on that device. Invites expire after 14 days (up to 30) and Settings lists open ones with **Revoke**. The note on an invite ("Mom") is only for the person inviting; it's stored with the board so `GET /boards` can say who is who.
+Opening the link shows **Join Now or Later sync**, with an optional name for the board and the Worker's host name. **Join** calls `POST /join`, which deletes the invite, makes a new board and a new token, and returns the token once. The app saves it like a pasted token and uploads the lists already on that device. Invites expire after 14 days (up to 30) and Settings lists open ones with **Revoke**. The note on an invite ("Mom") is only for the person inviting; it's stored with the board so `GET /boards` can say who is who.
 
 **Copy link for another device** makes `#connect=<token>&sync=<worker address>`. Opening it connects that device to the same board, the same way **Save and sync** does with a pasted token.
 

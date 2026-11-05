@@ -1,4 +1,4 @@
-// Cloudflare Worker: sync endpoint for Now and Then.
+// Cloudflare Worker: sync endpoint for Now or Later.
 //
 // Stores each board as one JSON document in Workers KV, protected by a bearer token.
 // Each device PUTs its whole board; the Worker merges it with what it already has
@@ -613,7 +613,7 @@ export default {
       return json({ error: "method not allowed" }, 405);
     }
 
-    return new Response("Now and Then sync is running. Your lists live at /data and need your access token.\n", {
+    return new Response("Now or Later sync is running. Your lists live at /data and need your access token.\n", {
       status: 200,
       headers: cors({ "Content-Type": "text/plain; charset=utf-8" }),
     });

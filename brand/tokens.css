@@ -1,4 +1,4 @@
-/* Now and Then brand tokens, generated from brand/tokens.json by hand.
+/* Now or Later brand tokens, generated from brand/tokens.json by hand.
    app/styles.css uses its own short names (--bg, --surface, --muted, --accent…) for the same values. */
 :root {
   --nt-ballpoint: #2f5bd3; --nt-margin: #d9534f; --nt-marigold: #f2b84b;
