@@ -343,7 +343,8 @@ export async function leaveShared(env, boardId, sid, doc) {
   return doc;
 }
 
-const liveCount = (stored) => (stored.lists || []).filter((l) => !l.deleted).length + (stored.shared || []).length;
+// Finished temporary lists (archived) are off the board, so they don't count.
+const liveCount = (stored) => (stored.lists || []).filter((l) => !l.deleted && !l.archived).length + (stored.shared || []).length;
 
 async function sharedApi(request, env, who, url) {
   const [, sid, sub] = url.pathname.replace(/\/+$/, "").match(/\/shared(?:\/([^/]+))?(?:\/([^/]+))?$/) || [];
