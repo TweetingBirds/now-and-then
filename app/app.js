@@ -1826,6 +1826,20 @@
     navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(() => {});
   }
 
+  // ---------- no zoom ----------
+  // iOS ignores user-scalable=no, so stop Safari's pinch gestures here. Two-finger
+  // touchmoves are pinches too; one-finger scrolling and drags are untouched.
+  for (const type of ["gesturestart", "gesturechange", "gestureend"]) {
+    document.addEventListener(type, e => e.preventDefault(), { passive: false });
+  }
+  document.addEventListener("touchmove", e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+  // The keyboard can nudge the whole page up on iOS and leave it there after it closes,
+  // which lets list scrolling move the page. Put the page back once nothing is being typed in.
+  const isField = n => n && (n.matches("input, select, textarea") || n.isContentEditable);
+  document.addEventListener("focusout", () => setTimeout(() => {
+    if (!isField(document.activeElement) && (window.scrollX || window.scrollY)) window.scrollTo(0, 0);
+  }, 150));
+
   // ---------- boot ----------
   applyTheme();
   repairOrphans();
