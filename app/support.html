@@ -3,6 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- Only this site's own scripts (and the theme line below, by its hash) run, and images and
+       fonts load only from here and Google Fonts. Sync can talk to any https address. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-KDLNOaM82cb5CLFroEg340OseYTqlfehKiLytdTwKYo='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https:; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta name="referrer" content="same-origin">
   <title>Support · Now or Later</title>
   <meta name="description" content="Help with Now or Later: frequently asked questions and how to get in touch.">
   <meta name="theme-color" content="#eef0f3" media="(prefers-color-scheme: light)">
@@ -41,7 +45,7 @@
       <h2 id="contactTitle" style="margin-top:0">Get in touch</h2>
       <p>Found a bug, lost something, or have an idea? Email <a href="mailto:hello@tweetingbirds.com">hello@tweetingbirds.com</a>, or use the button below. It fills in the version, build and kind of device for you.</p>
       <p><a class="btn primary" id="feedbackBtn" href="mailto:hello@tweetingbirds.com?subject=Now%20or%20Later%20feedback">Send feedback</a></p>
-      <p>Now or Later is made by Tweeting Birds LLC, a very small team, so replies can take a few days.</p>
+      <p>Now or Later is made by Tweeting Birds LLC, which is mostly just me, so a reply can take a few days.</p>
     </section>
 
     <h2>Frequently asked questions</h2>
@@ -49,11 +53,10 @@
 
       <h3>Getting started</h3>
 
-      <details id="moved">
-        <summary>Now or Later moved. How do I bring my lists?</summary>
+      <details>
+        <summary>What are Now, Tomorrow and Later for?</summary>
         <div>
-          <p>The app moved from tweetingbirds.com/now-and-then to <a href="https://now-or-later.tweetingbirds.com/">now-or-later.tweetingbirds.com</a>. Your browser keeps each address's lists separately, so open the app at the old address once and tap <strong>Move</strong>. It opens the new address with this device's lists, and with sync already set up if you use it. Then add the new address to your Home Screen or Dock and remove the old one.</p>
-          <p>If the Move button doesn't show up, or the Home Screen app opens empty: if you sync, use <strong>Copy link for another device</strong> on a device that already moved, or an invite link. If you don't, download a backup at the old address (Settings → Backups) and restore it at the new one.</p>
+          <p>They work like pages in a notebook. <strong>Now</strong> is today's page. <strong>Tomorrow</strong> is the next page. <strong>Later</strong> is for things you want to remember someday. You can rename them, change their colors, and add lists of your own, up to 10.</p>
         </div>
       </details>
 
@@ -66,13 +69,13 @@
       </details>
 
       <details>
-        <summary>What are Now, Tomorrow and Later for?</summary>
+        <summary>Does it cost anything?</summary>
         <div>
-          <p>They work like pages in a notebook. <strong>Now</strong> is today's page. <strong>Tomorrow</strong> is the next page. <strong>Later</strong> is for things you want to remember someday. You can rename any of them, change their colors, and add your own lists, up to 10.</p>
+          <p>No. Now or Later is free, with no ads and no accounts.</p>
         </div>
       </details>
 
-      <h3>Everyday use</h3>
+      <h3>Your day</h3>
 
       <details>
         <summary>Why did my Tomorrow todos move into Now?</summary>
@@ -84,30 +87,25 @@
       <details>
         <summary>Where did my finished todos go?</summary>
         <div>
-          <p>A checked-off todo stays in its list for the rest of the day, then moves to <strong>Done</strong>, the last list on the right, grouped by the day you finished it. In Settings you can choose to move finished todos to Done right away instead.</p>
-          <p>Done keeps everything you've finished. Use its search box and filters to find an old todo.</p>
-        </div>
-      </details>
-
-      <details>
-        <summary>How do I put a finished todo back?</summary>
-        <div>
-          <p>Find it in Done and tap the ↩ button next to it. It goes back, unchecked, to the list it came from.</p>
-        </div>
-      </details>
-
-      <details>
-        <summary>How do I move a todo to another list?</summary>
-        <div>
-          <p>Drag it by the ⋮⋮ handle on its left. Or tap ••• on the todo and pick a list under <strong>Move to</strong>. On a Mac, select a todo with the arrow keys and press <kbd>⇧</kbd> with <kbd>←</kbd> or <kbd>→</kbd>.</p>
+          <p>A checked-off todo stays in its list for the rest of the day, then moves to <strong>Done</strong>, the last list on the right, grouped by the day you finished it. In Settings you can have finished todos move to Done right away instead.</p>
+          <p>Done keeps everything you've finished. Use its search box and filters to find an old todo, and tap ↩ beside one to put it back, unchecked, on the list it came from.</p>
         </div>
       </details>
 
       <details>
         <summary>I deleted something by mistake. Can I get it back?</summary>
         <div>
-          <p>Right after you delete, move or check off a todo, a message at the bottom of the screen offers <strong>Undo</strong> for a few seconds. On a Mac, ⌘Z works while it's showing.</p>
-          <p>If that has gone, you can restore an earlier backup from Settings. See <a href="#backups">backups</a> below.</p>
+          <p>Right after you delete, move or check off a todo, a note at the bottom of the screen offers <strong>Undo</strong> for a few seconds. On a computer, ⌘Z (or Ctrl-Z) works while it's showing.</p>
+          <p>If that has gone, you can restore an earlier backup. See <a href="#backups">backups</a> below.</p>
+        </div>
+      </details>
+
+      <h3>Lists and todos</h3>
+
+      <details>
+        <summary>How do I move a todo to another list?</summary>
+        <div>
+          <p>Drag it by the ⋮⋮ handle on its left. Or tap ••• on the todo and pick a list under <strong>Move to</strong>. With a keyboard, select a todo with the arrow keys and press <kbd>⇧</kbd> with <kbd>←</kbd> or <kbd>→</kbd>.</p>
         </div>
       </details>
 
@@ -118,25 +116,12 @@
         </div>
       </details>
 
-      <details id="temporary">
-        <summary>Can I make a list that goes away when it's done, like a packing list?</summary>
+      <details id="archive">
+        <summary>How do I put away a list I've finished, like a packing list?</summary>
         <div>
-          <p>Yes. Tap ••• on the list and choose <strong>Make temporary</strong>. A small box mark shows by its name. Once every todo on it is checked, the whole list moves to Done: the next morning, or right away if Settings has finished todos move to Done right away. To finish it early, choose <strong>Move to Done now</strong>.</p>
-          <p>Finished lists sit at the top of Done. Tap a list's name to see its todos, or <strong>Use again</strong> to bring it back with everything unchecked. Now, Tomorrow and Later can't be temporary.</p>
-        </div>
-      </details>
-
-      <details>
-        <summary>Can I use dark mode?</summary>
-        <div>
-          <p>Yes. Now or Later follows your device's light or dark setting. To pick one for this device only, open Settings and choose Light or Dark under <strong>Appearance</strong>.</p>
-        </div>
-      </details>
-
-      <details>
-        <summary>Are there keyboard shortcuts?</summary>
-        <div>
-          <p>Yes, on a computer. Press <kbd>?</kbd> to see them all. For example, <kbd>N</kbd> adds a todo to Now, <kbd>X</kbd> checks off the selected todo, and <kbd>⌘</kbd> <kbd>,</kbd> opens Settings.</p>
+          <p>Check off everything on it. A note pops up with <strong>Archive list</strong>, and the same choice is in the list's ••• menu. Nothing is archived unless you choose it, so a list you keep reusing can just stay put.</p>
+          <p>Archived lists wait at the top of Done and don't count toward your 10. Tap one to see its todos, or tap <strong>Use again</strong> to bring it back with everything unchecked, ready for the next trip.</p>
+          <p>Now, Tomorrow and Later can't be archived. Archiving a shared list archives it for everyone on it.</p>
         </div>
       </details>
 
@@ -144,54 +129,113 @@
         <summary>Can I add a todo without opening the app?</summary>
         <div>
           <p>Yes. What works depends on the device.</p>
-          <p><strong>iPhone and iPad.</strong> Apple doesn't let Home Screen web apps appear in the share sheet or offer long-press shortcuts, so use the Shortcuts app instead. This needs sync turned on. In Settings, open <strong>Sync</strong> and find <strong>Quick add from Shortcuts</strong>. Then make a shortcut:</p>
+          <p><strong>iPhone and iPad.</strong> Apple doesn't let Home Screen web apps appear in the share sheet or offer long-press shortcuts, so use the Shortcuts app instead. This needs sync turned on. In Settings, open <strong>Sync</strong>, then <strong>Advanced</strong>, and find <strong>Quick add from Shortcuts</strong>. Then make a shortcut:</p>
           <ol>
             <li>Open Shortcuts, tap <strong>+</strong>, and name it something like <em>Add to Now</em>.</li>
             <li>Add an <strong>Ask for Input</strong> action (Text) with the prompt <em>What needs doing?</em></li>
             <li>Add a <strong>Get Contents of URL</strong> action. Paste the address from <strong>Copy address</strong> as the URL. Tap the arrow to show more: set Method to <strong>POST</strong>, add a header named <code>Authorization</code> with the value <code>Bearer</code>, a space, and the token from <strong>Copy access token</strong>. Set Request Body to <strong>JSON</strong> and add a Text field named <code>text</code> set to <em>Provided Input</em>.</li>
             <li>Optional: add a field named <code>to</code> with <code>tomorrow</code>, <code>later</code> or a list's name to add somewhere other than Now.</li>
           </ol>
-          <p>Now you can say "Hey Siri, Add to Now", put it on the Action button, Back Tap or a Lock Screen widget. To add from the share sheet, turn on <strong>Show in Share Sheet</strong> in the shortcut's details and use <em>Shortcut Input</em> instead of Ask for Input. Each line of text becomes its own todo, so a pasted list works too. The todo shows up in the app at its next sync.</p>
+          <p>Now you can say "Hey Siri, Add to Now", or put it on the Action button, Back Tap or a Lock Screen widget. To add from the share sheet, turn on <strong>Show in Share Sheet</strong> in the shortcut's details and use <em>Shortcut Input</em> instead of Ask for Input. Each line of text becomes its own todo, so a pasted list works too. The todo shows up in the app at its next sync.</p>
           <p><strong>Android and Chrome on a computer.</strong> Once Now or Later is installed, it appears in the share sheet: share a link or some text to it and it lands in Now. Long-press the app icon (or right-click it in the Dock or taskbar) for <strong>Add to Now</strong>, <strong>Add to Tomorrow</strong> and <strong>Add to Later</strong>.</p>
           <p><strong>Any device.</strong> Opening <code>now-or-later.tweetingbirds.com/?add=Buy%20milk</code> adds "Buy milk" to Now, and <code>&amp;to=tomorrow</code> picks another list. On iPhone, links open in Safari rather than the Home Screen app, and the two keep separate lists unless both are syncing, so the Shortcut above is the better choice there.</p>
         </div>
       </details>
 
-      <h3>Sync and backups</h3>
+      <h3>Sync across your devices</h3>
 
       <details id="sync">
         <summary>How do I use the same lists on my phone and computer?</summary>
         <div>
-          <p>Sync is optional. Without it, your lists stay on the device you're using. The easiest way to start is an <strong>invite link</strong> from whoever runs the sync service. Open it on your phone, pick a name for your board if you like, and tap <strong>Join</strong>. You get a board of your own, and the lists already on that device go onto it.</p>
-          <p>To add another device, open Settings on the one that already syncs and tap <strong>Copy link for another device</strong>. Send the link to yourself (AirDrop, Messages to yourself or a note) and open it on the new device.</p>
-          <p>You can also paste a sync address and access token under <strong>Sync with Cloudflare</strong> in Settings and tap <strong>Save and sync</strong>. The first sync on a new device loads your saved board.</p>
-          <p>Two people can share one board by both using the same link for another device. To keep boards separate, each person joins with their own invite.</p>
+          <p>Sync is optional. Without it, your lists stay on the device you're using. The easiest way to start is an <strong>invite link</strong> from whoever runs the sync service. Open it, pick a name for your lists if you like, and tap <strong>Join</strong>. The lists already on that device come along.</p>
+          <p>You can also open Settings, then <strong>Sync</strong>, paste a sync address and access token, and tap <strong>Save and sync</strong>.</p>
         </div>
       </details>
 
-      <details id="shared">
-        <summary>Can I share one list with someone without sharing my whole board?</summary>
+      <details id="device-link">
+        <summary>How do I add another phone, tablet or computer?</summary>
         <div>
-          <p>Yes. Open the list's <strong>•••</strong> menu and choose <strong>Share list…</strong>. You get a link to send. When the other person opens it and taps <strong>Add list</strong>, the list shows up on their board too. Everything else on each board stays private.</p>
-          <p>Both of you see the same name, color and todos, and changes show up for both. Each of you can put the list wherever you like on your own board. A shared list has a small people icon next to its count. Tap the icon to see who it's shared with.</p>
-          <p>Both people need sync turned on with the same sync service. Each link works once and expires after 14 days. Anyone on the list can send a new one from <strong>Invite someone…</strong> in the same menu. A list can have up to 10 people, and it counts toward your 10 lists.</p>
-          <p>Now and Tomorrow can't be shared, because each morning the app moves unfinished todos from Tomorrow into Now. Make a new list to share instead.</p>
-          <p>To stop sharing, choose <strong>Leave shared list…</strong>. The list comes off your board and stays on everyone else's. When the last person leaves, it's deleted.</p>
+          <p>On a device that already syncs, open Settings, then <strong>Sync</strong>, and tap <strong>Copy link for another device</strong>. Send the link to yourself (AirDrop, a message to yourself or a note) and open it on the new device.</p>
+          <p>The link works once, within a day. If it has been used or is older than that, make a new one.</p>
+          <p>Two people can share all of their lists by connecting with the same device link. To share just one list, see <a href="#shared">sharing a list</a> below.</p>
+        </div>
+      </details>
+
+      <details id="devices">
+        <summary>I lost a phone. How do I stop it syncing?</summary>
+        <div>
+          <p>Open Settings, then <strong>Sync</strong>, then <strong>Advanced</strong>. <strong>Devices added with a link</strong> lists each device you connected with a device link. Tap <strong>Remove</strong> beside one and it stops syncing. Its lists stay on it, but nothing new reaches it.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>What does the badge at the top mean?</summary>
+        <div>
+          <p>Most of the time there's no badge, which means everything is fine. It only shows up when something needs your attention:</p>
+          <ul>
+            <li><strong>Offline</strong>: there's no connection right now. Keep going; your changes are saved on this device and sync when you're back online. A small amber ring marks todos that haven't synced yet.</li>
+            <li><strong>Sync problem</strong>: the sync service refused, often because the token is wrong or the device was removed. Tap the badge for details.</li>
+          </ul>
+          <p>Settings shows whether sync is on and which lists you're syncing with.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>A todo changed back after I edited it. Why?</summary>
+        <div>
+          <p>If the same todo or list was changed on two devices, the newest change wins. When yours is the one that lost, a note says so, for example “Buy milk” was also changed on another device. Edit it again and it will sync.</p>
+        </div>
+      </details>
+
+      <h3>Sharing a list</h3>
+
+      <details id="shared">
+        <summary>Can I share one list with someone without sharing everything?</summary>
+        <div>
+          <p>Yes. Open the list's <strong>•••</strong> menu and choose <strong>Share list…</strong>. You get a link to send. When the other person opens it and taps <strong>Add list</strong>, the list shows up with theirs. Everything else stays private.</p>
+          <p>You both see the same name, color and todos, and changes show up for both. Each of you can put the list wherever you like. A shared list has a small people icon next to its count.</p>
+          <p>Both people need sync turned on with the same sync service. A list can have up to 10 people, and it counts toward your 10 lists. Now and Tomorrow can't be shared, because each morning moves unfinished todos from Tomorrow into Now. Make a new list to share instead.</p>
+        </div>
+      </details>
+
+      <details id="people">
+        <summary>How do I see who's on a shared list, or take someone off?</summary>
+        <div>
+          <p>Choose <strong>People and links</strong> in the list's ••• menu. It shows everyone on the list and any invite links nobody has used yet. Whoever shared the list first can take a person off it or take back an unused link. Anyone on the list can send a new link from <strong>Invite someone…</strong>.</p>
+          <p>To stop sharing yourself, choose <strong>Leave shared list…</strong>. The list comes off your device and stays with everyone else. When the last person leaves, it's deleted.</p>
         </div>
       </details>
 
       <details id="invite">
         <summary>My invite link doesn't work.</summary>
         <div>
-          <p>Each invite link works once and expires after 14 days. If it has been used already (maybe on another device) or has expired, ask the person who sent it for a new one. If you already joined, use <strong>Copy link for another device</strong> on the device that syncs instead of the invite.</p>
+          <p>Each invite link works once and expires after 14 days. It also stops working if the person who made it has left the list. Ask for a new one. If you already joined on another device, use <strong>Copy link for another device</strong> on that device instead.</p>
+        </div>
+      </details>
+
+      <h3>Backups and your data</h3>
+
+      <details id="backups">
+        <summary>How do backups work?</summary>
+        <div>
+          <p>In Settings under <strong>Backups</strong>, <strong>Download backup</strong> saves a file with every list, todo and Done item. On a phone, choose <strong>Save to Files</strong>. <strong>Restore from file…</strong> puts everything in that file back. <strong>Download CSV</strong> makes a spreadsheet you can open in Numbers or Excel, but it can't be restored.</p>
+          <p>When sync is on, the sync service also saves a copy each night your lists have changed, and at least once a week, and keeps each copy for 30 days. Settings lists those copies, and you can restore or download any of them. Before any restore, one more copy is saved so the restore can be undone the same way.</p>
         </div>
       </details>
 
       <details id="delete">
-        <summary>How do I delete my synced data?</summary>
+        <summary>How do I delete my synced lists?</summary>
         <div>
-          <p>If you joined with an invite link, open Settings and tap <strong>Delete synced board…</strong> under <strong>Sync with Cloudflare</strong>. This permanently removes your board, its nightly copies and its access token from the sync service, right away. Your other devices stop syncing and keep the lists they show, unless you also tick <strong>Also erase the lists on this device</strong>. Download a backup first if you might want your lists later.</p>
-          <p>If your board was set up by hand with a token from the Worker's owner, the button isn't shown. Email <a href="mailto:hello@tweetingbirds.com">hello@tweetingbirds.com</a> and it will be removed.</p>
+          <p>If you joined with an invite link, open Settings, then <strong>Sync</strong>, then <strong>Advanced</strong>, and tap <strong>Delete synced board…</strong>. This permanently removes your lists, their nightly copies and every access token for them from the sync service, right away. Your other devices stop syncing and keep the lists they show, unless you also tick <strong>Also erase the lists on this device</strong>. Download a backup first if you might want your lists later.</p>
+          <p>If your sync was set up by hand with a token from the sync service's owner, the button isn't shown. Email <a href="mailto:hello@tweetingbirds.com">hello@tweetingbirds.com</a> and I'll remove it.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>How do I erase everything from a device?</summary>
+        <div>
+          <p>Your lists live in your browser's storage for this site. To erase them, clear the website data for this site in your browser settings, or delete the Home Screen app. On iPhone, go to Settings → Apps → Safari → Advanced → Website Data.</p>
+          <p>If you use sync, the sync service has a copy too. See <a href="#delete">How do I delete my synced lists?</a></p>
         </div>
       </details>
 
@@ -202,55 +246,27 @@
         </div>
       </details>
 
+      <h3>Look and feel</h3>
+
       <details>
-        <summary>What does the badge at the top mean?</summary>
+        <summary>Can I use dark mode?</summary>
         <div>
-          <ul>
-            <li><strong>On this device</strong>: sync is off, and your lists are only here.</li>
-            <li><strong>Synced</strong>: everything is saved, with the name of the board you're syncing with.</li>
-            <li><strong>Syncing…</strong>: changes are on their way.</li>
-            <li><strong>Offline</strong>: there's no connection right now. Keep going; your changes are saved on this device and sync when you're back online. A small amber ring marks todos that haven't synced yet.</li>
-            <li><strong>Sync problem</strong>: the sync service refused, often because the token is wrong. Tap the badge for details, or check the token in Settings. If your board was deleted from another device, sync turns off and the badge goes back to <strong>On this device</strong>.</li>
-          </ul>
+          <p>Yes. Now or Later follows your device's light or dark setting. To pick one for this device only, open Settings and choose Light or Dark under <strong>Appearance</strong>.</p>
         </div>
       </details>
 
-      <details>
-        <summary>A todo changed back after I edited it. Why?</summary>
+      <details id="shortcuts">
+        <summary>Are there keyboard shortcuts?</summary>
         <div>
-          <p>If the same todo or list was changed on two devices, the newest change wins. When your change is the one that lost, a message says so, for example “Buy milk” was also changed on another device. Edit it again and it will sync.</p>
-        </div>
-      </details>
-
-      <details id="backups">
-        <summary>How do backups work?</summary>
-        <div>
-          <p>In Settings under <strong>Backups</strong>, <strong>Download backup</strong> saves a file with every list, todo and Done item. On a phone, choose <strong>Save to Files</strong>. <strong>Restore from file…</strong> puts everything in that file back. <strong>Download CSV</strong> makes a spreadsheet you can open in Numbers or Excel, but it can't be restored.</p>
-          <p>When sync is on, a copy of your board is also saved every night and kept for 30 days. Settings lists those copies, and you can restore or download any of them. Before any restore, one more copy is saved so the restore can be undone the same way.</p>
-        </div>
-      </details>
-
-      <details>
-        <summary>How do I erase everything?</summary>
-        <div>
-          <p>Your lists live in your browser's storage for this site. To erase them from a device, clear the website data for this site in your browser settings, or delete the Home Screen app. On iPhone, go to Settings → Apps → Safari → Advanced → Website Data.</p>
-          <p>If you use sync, your board is also stored by the sync service. See <a href="#delete">How do I delete my synced data?</a></p>
-        </div>
-      </details>
-
-      <h3>About the app</h3>
-
-      <details>
-        <summary>Does it cost anything?</summary>
-        <div>
-          <p>No. Now or Later is free, with no ads and no accounts.</p>
+          <p>Yes, on a computer. Press <kbd>?</kbd> to see them all. For example, <kbd>N</kbd> adds a todo to Now, <kbd>X</kbd> checks off the selected todo, and <kbd>⌘</kbd> <kbd>,</kbd> opens Settings.</p>
+          <p>If single keys get in the way, say with a screen reader or another app's shortcuts, turn on <strong>Hold Option</strong> at the top of that sheet. Then the shortcuts that work anywhere need <kbd>⌥</kbd> Option (Alt on Windows), so <kbd>N</kbd> becomes <kbd>⌥</kbd> <kbd>N</kbd>.</p>
         </div>
       </details>
 
       <details>
         <summary>How do I get the newest version?</summary>
         <div>
-          <p>Updates arrive on their own. If one comes out while the app is open, a message says so, and Settings shows a <strong>Reload</strong> button. See <a href="whats-new.html">What's New</a> for what changed.</p>
+          <p>Updates arrive on their own. If one comes out while the app is open, a note says so, and Settings shows a <strong>Reload</strong> button. <a href="whats-new.html">What's New</a> says what changed.</p>
         </div>
       </details>
 

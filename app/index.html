@@ -3,6 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <!-- Only this site's own scripts (and the theme line below, by its hash) run, and images and
+       fonts load only from here and Google Fonts. Sync can talk to any https address. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-KDLNOaM82cb5CLFroEg340OseYTqlfehKiLytdTwKYo='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https:; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta name="referrer" content="same-origin">
   <title>Now or Later</title>
   <meta name="description" content="A notebook-style todo list: Now, Tomorrow, Later and Done.">
   <meta name="theme-color" content="#eef0f3" media="(prefers-color-scheme: light)">
@@ -31,7 +35,7 @@
       <span class="date" id="today"></span>
     </div>
     <div class="tools">
-      <button class="sync" id="syncStatus" type="button" data-state="off">On this device</button>
+      <button class="sync" id="syncStatus" type="button" data-state="off" hidden>On this device</button>
       <button class="btn" id="openSettings" type="button">Settings</button>
     </div>
   </header>
@@ -84,14 +88,6 @@
                 <label><input type="radio" name="theme" value="dark"> Dark</label>
               </div>
             </div>
-            <label class="item switch-row" id="hapticsRow">
-              <span class="item-text">Buzz when picking up and dropping a todo</span>
-              <input type="checkbox" class="switch" id="haptics">
-            </label>
-            <button class="item nav kb-only" type="button" id="showKeys">
-              <span class="item-text">Keyboard shortcuts</span>
-              <span class="item-value"><kbd>?</kbd></span><svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
-            </button>
           </div>
         </section>
 
@@ -113,7 +109,7 @@
             <a class="item nav" href="whats-new.html" id="whatsNewLink"><span class="item-text">What's New</span><span class="new-dot" id="whatsNewDot" hidden>New</span><svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></a>
             <button class="item nav" type="button" id="showWelcome"><span class="item-text">Welcome tour</span><svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></button>
             <a class="item nav" href="support.html"><span class="item-text">Support &amp; FAQ</span><svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></a>
-            <a class="item nav" href="mailto:hello@tweetingbirds.com?subject=Now%20or%20Later%20feedback" id="feedbackLink"><span class="item-text">Send feedback <small>Email us a bug, an idea or a kind word.</small></span><svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></a>
+            <a class="item nav" href="mailto:hello@tweetingbirds.com?subject=Now%20or%20Later%20feedback" id="feedbackLink"><span class="item-text">Send feedback <small>Email me a bug, an idea or a kind word.</small></span><svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></a>
             <a class="item nav" href="privacy.html"><span class="item-text">Privacy</span><svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></a>
             <a class="item nav" href="terms.html"><span class="item-text">Terms</span><svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></a>
           </nav>
@@ -125,13 +121,13 @@
         </section>
       </div>
 
-      <!-- Sync page: connect, add devices, invite people, delete the board. -->
+      <!-- Sync page: connect, add devices; the rarer things sit under Advanced. -->
       <div class="pane" data-pane="sync" data-title="Sync" hidden>
         <section class="group">
-          <p>Open an invite link to start syncing, or paste the address of your Now or Later Worker and its access token. <a href="support.html#sync">How sync works</a>. Leave both empty to keep your lists on this device only.</p>
+          <p>Got an invite link? Open it on this device and sync sets itself up. Or paste a sync address and access token here. <a href="support.html#sync">How sync works</a>. Leave both empty to keep your lists on this device only.</p>
           <div class="card pad">
-            <label class="field">Worker address
-              <input type="url" id="syncUrl" placeholder="https://now-and-then-sync.yourname.workers.dev" autocomplete="off" spellcheck="false">
+            <label class="field">Sync address
+              <input type="url" id="syncUrl" placeholder="https://your-sync.example.workers.dev" autocomplete="off" spellcheck="false">
             </label>
             <label class="field">Access token
               <input type="password" id="syncToken" autocomplete="off" spellcheck="false">
@@ -145,10 +141,20 @@
 
         <section class="group sync-more" id="syncMore" hidden aria-labelledby="gDevices">
           <h3 id="gDevices">Your devices</h3>
-          <p>The link connects another phone, tablet or computer to this board. Anyone who has it can open your lists, so send it only to yourself or to someone you share the board with.</p>
+          <p>The link connects another phone, tablet or computer to your lists. It works once, within a day, so send it to yourself and open it on the other device.</p>
           <div class="row start">
             <button class="btn" type="button" id="deviceLink">Copy link for another device</button>
           </div>
+        </section>
+
+        <details class="group advanced" id="advanced" hidden>
+          <summary>Advanced</summary>
+
+        <section class="group sync-more" aria-labelledby="gDeviceList">
+          <h3 id="gDeviceList">Devices added with a link</h3>
+          <p>Each one has its own key. Remove a phone you've lost or given away, and it stops syncing.</p>
+          <ul class="invite-list" id="deviceList"></ul>
+          <p class="msg device-msg ok" id="deviceNote" role="status"></p>
         </section>
 
         <section class="group sync-more" id="quickAddZone" hidden aria-labelledby="gQuick">
@@ -186,6 +192,7 @@
             </div>
           </div>
         </section>
+        </details>
       </div>
 
       <!-- Backups page: files on this device, and the Worker's nightly copies. -->
@@ -202,7 +209,7 @@
         </section>
         <section class="group cloud-backups" id="cloudBackups" hidden aria-labelledby="gNightly">
           <h3 id="gNightly">Nightly copies</h3>
-          <p id="cloudInfo">The sync Worker saves a copy of your board every night and keeps it for 30 days.</p>
+          <p id="cloudInfo">The sync Worker saves a copy of your board each night it changes, and at least once a week, and keeps it for 30 days.</p>
           <div class="row start">
             <select id="snapList" aria-label="Saved copies"></select>
             <button class="btn" type="button" id="snapRestore">Restore…</button>
@@ -247,21 +254,18 @@
     </form>
   </dialog>
 
-  <dialog class="settings join" id="moveDlg" aria-labelledby="moveTitle">
+  <!-- A shared list's people and open links. -->
+  <dialog class="settings join" id="peopleDlg" aria-labelledby="peopleTitle">
     <form method="dialog">
       <div class="settings-head">
-        <h2 id="moveTitle">Now or Later has a new address</h2>
+        <h2 id="peopleTitle">People and links</h2>
         <button class="close-x" value="cancel" formnovalidate aria-label="Close" title="Close">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>
         </button>
       </div>
       <div class="settings-body">
-        <p id="moveWhat"></p>
-        <div class="msg" id="moveMsg" role="status"></div>
-        <div class="row">
-          <button class="btn" value="cancel" formnovalidate>Later</button>
-          <button class="btn primary" type="button" id="moveGo">Move</button>
-        </div>
+        <div class="people" id="peopleBody"></div>
+        <div class="msg" id="peopleMsg" role="status"></div>
       </div>
     </form>
   </dialog>
@@ -300,7 +304,6 @@
         <ul class="welcome-list">
           <li><span class="dot" style="--c:#a3a9b5"></span><span><strong>No account needed.</strong> Your lists are saved on this device and work offline.</span></li>
           <li><span class="dot" style="--c:#9b8cf0"></span><span><strong>Got an invite or device link?</strong> Open it on this device and sync sets itself up, so your lists show up everywhere you use Now or Later.</span></li>
-          <li><span class="dot" style="--c:#8ecae6"></span><span><strong>Want your own sync?</strong> It runs free on Cloudflare. The <a href="https://github.com/TweetingBirds/now-or-later/blob/main/docs/self-hosting.md" target="_blank" rel="noopener">self-hosting guide</a> takes about fifteen minutes.</span></li>
           <li id="welcomeInstall"><span class="dot" style="--c:#f6a6cf"></span><span><strong>Keep it handy.</strong> <span id="welcomeInstallHow">Add it to your Home Screen from Safari's Share button.</span></span></li>
         </ul>
         <div class="row start">
@@ -325,10 +328,11 @@
         </button>
       </div>
       <div class="settings-body">
+        <label class="toggle keys-alt"><input type="checkbox" id="keysAlt"> Hold <kbd>⌥</kbd> Option (Alt) for the shortcuts that work anywhere</label>
         <h3>Adding</h3>
         <dl class="keylist">
-          <dt><kbd>N</kbd></dt><dd>New todo in Now</dd>
-          <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>New todo in that list</dd>
+          <dt><kbd class="opt" hidden>⌥</kbd> <kbd>N</kbd></dt><dd>New todo in Now</dd>
+          <dt><kbd class="opt" hidden>⌥</kbd> <kbd>1</kbd>–<kbd>9</kbd></dt><dd>New todo in that list</dd>
           <dt><kbd>Esc</kbd></dt><dd>Leave the add box</dd>
         </dl>
         <h3>Getting around</h3>
@@ -348,8 +352,8 @@
         </dl>
         <h3>Anywhere</h3>
         <dl class="keylist">
-          <dt><kbd>⌘</kbd> <kbd>,</kbd> or <kbd>,</kbd></dt><dd>Settings</dd>
-          <dt><kbd>?</kbd></dt><dd>This list</dd>
+          <dt><kbd>⌘</kbd> <kbd>,</kbd> or <kbd class="opt" hidden>⌥</kbd> <kbd>,</kbd></dt><dd>Settings</dd>
+          <dt><kbd class="opt" hidden>⌥</kbd> <kbd>?</kbd></dt><dd>This list</dd>
         </dl>
       </div>
     </form>

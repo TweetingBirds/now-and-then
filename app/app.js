@@ -6,7 +6,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.16.0";
+  const APP_VERSION = "1.17.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -17,6 +17,10 @@
   const SYNCED_KEY = "nat.synced.v1"; // per-device: updatedAt of each item as the Worker last had it
   const MAX_LISTS = 10;
   const TOMBSTONE_DAYS = 60;
+  const DEFAULT_COLOR = "#a3a9b5";
+  // Colors go into style attributes, so only "#rrggbb" is used. Anything else (say from
+  // someone on a shared list) becomes the plain gray. The Worker checks this too.
+  const safeColor = (c) => (typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c) ? c : DEFAULT_COLOR);
   const PALETTE = ["#f2b84b", "#7b9cff", "#9b8cf0", "#5cc6a7", "#f28b82", "#f6a6cf", "#8ecae6", "#b5d16b", "#c9a27e", "#ff9f5a", "#7fd1d8", "#a3a9b5"];
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
   const now = () => Date.now();
@@ -25,11 +29,27 @@
   const read = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
   const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
 
-  let local = Object.assign({ lastDay: null, syncUrl: "", syncToken: "", pristine: false, synced: false, board: "", boardName: "", boardKind: "", admin: false, switching: false, otherBoard: "", theme: "system", haptics: true }, read(LOCAL_KEY) || {});
+  let local = Object.assign({ lastDay: null, syncUrl: "", syncToken: "", pristine: false, synced: false, board: "", boardName: "", boardKind: "", admin: false, switching: false, otherBoard: "", theme: "system", keysAlt: false, sentAt: 0 }, read(LOCAL_KEY) || {});
+  const looksLikeBoard = (b) => !!b && typeof b === "object" && Array.isArray(b.lists) && Array.isArray(b.todos);
   let board = read(BOARD_KEY);
-  // A device with no lists yet is a first visit: it gets the welcome (see showWelcome).
-  // Devices that already had lists never have welcome set, so they never see it.
-  if (!board) { board = starterBoard(); local.pristine = true; local.welcome = "pending"; write(LOCAL_KEY, local); }
+  let recovered = "";
+  if (!looksLikeBoard(board)) {
+    const damaged = localStorage.getItem(BOARD_KEY) !== null;
+    board = starterBoard(); local.pristine = true;
+    if (local.synced && local.syncUrl && local.syncToken) {
+      // The saved lists went missing or got damaged (a browser can lose storage) on a
+      // device that syncs. Load the synced board as it is, the way switching boards
+      // does, instead of syncing the welcome lists into it.
+      local.synced = false; local.switching = true; recovered = "synced";
+    } else if (damaged) {
+      recovered = "local";
+    } else {
+      // A device with no lists yet is a first visit: it gets the welcome (see showWelcome).
+      // Devices that already had lists never have welcome set, so they never see it.
+      local.welcome = "pending";
+    }
+    write(LOCAL_KEY, local);
+  }
   // What the Worker last confirmed it has, as { lists: {id: updatedAt}, todos: {...}, settings }.
   // Anything on this device that is newer hasn't reached the Worker yet. A device that
   // synced before this was tracked starts from its current board, so an upgrade
@@ -88,7 +108,7 @@
   }
 
   // ---------- helpers over the board ----------
-  // Finished temporary lists stay in board.lists with archived: true (see archiveList).
+  // Archived lists stay in board.lists with archived: true (see archiveList).
   const lists = () => board.lists.filter(l => !l.deleted && !l.archived).sort((a, b) => a.order - b.order);
   const listById = (id) => board.lists.find(l => l.id === id && !l.deleted && !l.archived);
   const finishedLists = () => board.lists.filter(l => !l.deleted && l.archived).sort((a, b) => (b.archivedDay || "").localeCompare(a.archivedDay || "") || (b.updatedAt - a.updatedAt));
@@ -113,21 +133,17 @@
 
   function archive(t) {
     const l = listById(t.listId);
-    touch(t, { archived: true, archivedDay: t.doneDay || todayKey(), fromName: l ? l.name : "", fromColor: l ? l.color : "#a3a9b5" });
+    touch(t, { archived: true, archivedDay: t.doneDay || todayKey(), fromName: l ? l.name : "", fromColor: l ? safeColor(l.color) : DEFAULT_COLOR });
   }
 
-  // A temporary list (a packing list, say) goes to Done as a whole once every todo
-  // on it is checked. Its todos go to Done with it, so "Use again" can bring the
-  // list back with all of them unchecked.
+  // Archiving a list (a packing list, say) is something you choose, from its ••• menu
+  // or the toast after checking its last todo, once everything on it is checked.
+  // Its todos go to Done with it, so "Use again" can bring the list back with all of
+  // them unchecked. Now, Tomorrow and Later are the notebook's pages; they stay.
+  const canArchive = (l) => !l.role && todosIn(l.id).length > 0 && todosIn(l.id).every(t => t.done);
   function archiveList(l) {
     todosIn(l.id).forEach(archive);
     touch(l, { archived: true, archivedDay: todayKey() });
-  }
-  // A temporary list is finished when it has todos and all of them are checked.
-  // It leaves when its todos would: right away with "doneNow", else the next morning.
-  function listFinished(l, today = todayKey()) {
-    const ts = todosIn(l.id);
-    return !!l.temp && ts.length > 0 && ts.every(t => t.done && (board.settings.doneNow || (t.doneDay && t.doneDay < today)));
   }
 
   // Checked todos move to Done: right away when the "doneNow" setting is on,
@@ -135,7 +151,6 @@
   function sweepDone() {
     const today = todayKey();
     let moved = 0;
-    for (const l of lists()) if (listFinished(l, today)) { moved += todosIn(l.id).length; archiveList(l); }
     for (const t of board.todos) {
       if (!t.deleted && !t.archived && t.done && (board.settings.doneNow || (t.doneDay && t.doneDay < today))) { archive(t); moved++; }
     }
@@ -154,8 +169,12 @@
     if (board.settings.carry) {
       const nowL = lists().find(l => l.role === "now"), tomL = lists().find(l => l.role === "tomorrow");
       if (nowL && tomL) {
+        // Only what was in Tomorrow before today began. A todo changed since midnight
+        // was put in Tomorrow today (on another device, which already did its
+        // morning), so it stays there.
+        const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
         let o = Math.max(0, ...todosIn(nowL.id).map(t => t.order));
-        todosIn(tomL.id).forEach(t => touch(t, { listId: nowL.id, order: ++o }));
+        todosIn(tomL.id).filter(t => (t.updatedAt || 0) < midnight.getTime()).forEach(t => touch(t, { listId: nowL.id, order: ++o }));
       }
     }
     local.lastDay = today; write(LOCAL_KEY, local);
@@ -257,6 +276,9 @@
       ok: who ? `Synced · ${who}` : "Synced",
     }[state];
     s.dataset.state = state; s.textContent = label;
+    // The badge only shows when something needs a look: offline, or a sync problem.
+    // The rest of the time Settings > Sync says where things stand.
+    s.hidden = !(state === "error" || state === "offline");
     document.body.dataset.sync = state;
     const lines = [];
     if (state === "off") lines.push("Lists are kept on this device only. Tap to set up sync.");
@@ -350,6 +372,9 @@
       }
       const headers = { "Authorization": "Bearer " + local.syncToken, "Content-Type": "application/json" };
       if (local.board) headers["X-Expect-Board"] = local.board;
+      // When this device last sent its board here (see dropRejected).
+      const prevSent = local.synced ? local.sentAt || 0 : 0, sentAt = Date.now();
+      if (prevSent) headers["X-Synced-At"] = String(prevSent);
       const res = await fetch(dataUrl(), { method: "PUT", headers, body: JSON.stringify(board) });
       if (res.status === 401) throw new Error("The access token was not accepted.");
       if (res.status === 410) throw boardGone();
@@ -361,12 +386,13 @@
       const lost = local.synced ? lostEdits(merged) : [];
       // Edits made while the request was in flight are newer, so they survive the merge.
       board = mergeBoards(board, merged);
+      dropRejected(merged, prevSent);
       rememberServer(merged);
-      local.synced = true; lastPull = Date.now(); write(LOCAL_KEY, local);
+      local.synced = true; local.sentAt = sentAt; lastPull = Date.now(); write(LOCAL_KEY, local);
       syncSucceeded();
       repairOrphans();
       write(BOARD_KEY, board);
-      if (!isBusyEditing()) render();
+      renderWhenFree();
       hintConflicts(lost);
       return true;
     } catch (e) {
@@ -375,6 +401,18 @@
       syncing = false;
       if (again) { again = false; schedulePush(); }
       showStatus();
+    }
+  }
+  // The Worker drops a deletion coming back from a device that was offline for months
+  // (its tombstone was cleaned up after TOMBSTONE_DAYS): something it has never heard
+  // of, last changed before this device's previous sync and before that cutoff. Drop
+  // the same things here, or this device would keep showing them.
+  function dropRejected(merged, prevSent) {
+    if (!prevSent) return;
+    const cutoff = Math.min(now() - TOMBSTONE_DAYS * 864e5, prevSent);
+    for (const kind of ["lists", "todos"]) {
+      const known = new Set((merged[kind] || []).map(i => i.id));
+      board[kind] = board[kind].filter(i => known.has(i.id) || (i.updatedAt || 0) >= cutoff);
     }
   }
   // The Worker answers 409 instead of merging when the token opens a different
@@ -396,13 +434,17 @@
   // It stands aside whenever a push is due or running (that push returns the merged
   // board anyway) and while the person is typing or dragging, so it never
   // re-renders under their hands. The next poll catches up.
+  // pull(true) is for a new morning (see checkDay): it waits for a sync that's
+  // already running, doesn't stand aside for typing, and gives up after a few seconds.
   let lastPull = 0;
-  async function pull() {
+  async function pull(force = false) {
     if (!syncConfigured() || !local.synced || local.otherBoard) return;
-    if (syncing || pushTimer || !navigator.onLine || busyForPull()) return;
+    if (force) for (let i = 0; syncing && i < 25; i++) await new Promise(r => setTimeout(r, 200));
+    if (syncing || !navigator.onLine || (!force && (pushTimer || busyForPull()))) return;
     syncing = true; lastPull = Date.now();
+    const quit = new AbortController(), timer = force ? setTimeout(() => quit.abort(), 5000) : 0;
     try {
-      const res = await fetch(dataUrl(), { headers: { "Authorization": "Bearer " + local.syncToken }, cache: "no-store" });
+      const res = await fetch(dataUrl(), { headers: { "Authorization": "Bearer " + local.syncToken }, cache: "no-store", signal: quit.signal });
       if (res.status === 401) throw new Error("The access token was not accepted.");
       if (res.status === 410) throw boardGone();
       if (res.status === 409) throw new Error(await clashMessage(res));
@@ -418,20 +460,21 @@
       if (who) noteBoard(res);
       syncSucceeded();
       // Someone may have started typing or dragging while the request was out.
-      if (pushTimer || busyForPull()) return;
+      if (!force && (pushTimer || busyForPull())) return;
       const lost = lostEdits(remote);
       const before = JSON.stringify(board);
       board = mergeBoards(board, remote);
       rememberServer(remote);
       repairOrphans();
       const after = JSON.stringify(board);
-      if (after !== before) { write(BOARD_KEY, board); render(); }
+      if (after !== before) { write(BOARD_KEY, board); renderWhenFree(); }
       hintConflicts(lost);
       // This device had edits the saved board lacks (say a push failed): send them.
       if (hasNewer(board, remote)) schedulePush();
     } catch (e) {
-      syncFailed(e);
+      if (e.name !== "AbortError") syncFailed(e);
     } finally {
+      clearTimeout(timer);
       syncing = false;
       if (again) { again = false; schedulePush(); }
       showStatus();
@@ -453,6 +496,13 @@
     if (!drag && a && a.id && (a.id.startsWith("add-") || a.id === "doneSearch") && !a.value) return false;
     return isBusyEditing();
   }
+  // Synced changes that arrive mid-edit wait for the edit to end, then show.
+  let viewStale = false;
+  function renderWhenFree() {
+    if (busyForPull()) viewStale = true; else { viewStale = false; render(); }
+  }
+  document.addEventListener("focusout", () => setTimeout(() => { if (viewStale) renderWhenFree(); }, 0));
+  document.addEventListener("pointerup", () => setTimeout(() => { if (viewStale) renderWhenFree(); }, 0));
   function isBusyEditing() {
     const a = document.activeElement;
     return drag || (a && (a.isContentEditable || (a.tagName === "INPUT" && (a.type === "text" || a.type === "search")) || a.classList?.contains("col-title")));
@@ -503,17 +553,10 @@
     else if (kbSel && (rowFocused || document.activeElement === document.body)) focusTodo(kbSel);
   }
 
-  const TEMP_HINT = "Temporary list: it goes to Done once everything on it is checked";
-  const BOX = () => {
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("width", "16"); svg.setAttribute("height", "16"); svg.setAttribute("aria-hidden", "true");
-    svg.innerHTML = '<rect x="3" y="4" width="18" height="5" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 9v9.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V9M10 13h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
-    return svg;
-  };
   function renderList(list) {
     const todos = todosIn(list.id);
     const open = todos.filter(t => !t.done).length;
-    const col = el("section", { class: "col" + (list.shared ? " shared" : ""), "data-list": list.id, style: `--c:${list.color}` });
+    const col = el("section", { class: "col" + (list.shared ? " shared" : ""), "data-list": list.id, style: `--c:${safeColor(list.color)}` });
     const head = el("div", { class: "col-head" });
     head.append(...[
       el("button", { class: "swatch-btn", title: "Change color", "aria-label": `Change ${list.name} color`, "data-pop-trigger": true, onclick: e => colorPop(e, list, head) }),
@@ -522,7 +565,6 @@
         onchange: e => { const v = e.target.value.trim(); if (v && v !== list.name) { touch(list, { name: v }); commit(); } else e.target.value = list.name; },
         onkeydown: e => { if (e.key === "Enter") e.target.blur(); },
       }),
-      list.temp ? el("button", { class: "temp-mark", type: "button", title: TEMP_HINT, "aria-label": TEMP_HINT, "data-pop-trigger": true, onclick: e => listPop(e, list, head) }, BOX()) : null,
       list.shared ? el("button", { class: "shared-mark", type: "button", title: sharedWith(list), "aria-label": sharedWith(list), "data-pop-trigger": true, onclick: e => listPop(e, list, head) }, PEOPLE()) : null,
       el("span", { class: "count", title: "Unfinished" }, String(open)),
       el("button", { class: "icon-btn", title: "List options", "aria-label": `${list.name} options`, "data-pop-trigger": true, onclick: e => listPop(e, list, head) }, "•••"),
@@ -534,8 +576,11 @@
     const form = el("form", { class: "add", onsubmit: e => {
       e.preventDefault(); const v = input.value.trim(); if (!v) return;
       const order = Math.max(0, ...todos.map(t => t.order)) + 1;
-      board.todos.push({ id: uid(), text: v, listId: list.id, order, done: false, doneDay: null, archived: false, updatedAt: now() });
+      const id = uid();
+      board.todos.push({ id, text: v, listId: list.id, order, done: false, doneDay: null, archived: false, updatedAt: now() });
       commit();
+      // A long list keeps what was just added in view.
+      rowOf(id)?.scrollIntoView({ block: "nearest" });
     } }, input, el("button", { class: "btn", type: "submit" }, "Add"));
     col.append(head, body, form);
     return col;
@@ -546,20 +591,21 @@
     const text = el("div", { class: "text", ondblclick: () => editText(text, t) }, t.text);
     row.append(
       el("button", { class: "grip", "aria-label": "Drag to move", title: "Drag to move", onpointerdown: e => startDrag(e, t, row) }, "⋮⋮"),
-      el("input", { type: "checkbox", class: "check", checked: t.done, "aria-label": "Done", onchange: e => {
+      // The label around the box is the 44-point tap target; the box stays small.
+      el("label", { class: "check-hit" }, el("input", { type: "checkbox", class: "check", checked: t.done, "aria-label": "Done", onchange: e => {
         const checked = e.target.checked;
         const list = listById(t.listId);
-        const temp = list && list.temp;
-        let last = false;
-        const undo = undoable(temp ? [list, ...todosIn(list.id)] : [t], () => {
+        const undo = undoable([t], () => {
           touch(t, { done: checked, doneDay: checked ? todayKey() : null });
-          last = checked && temp && todosIn(list.id).every(x => x.done);
-          if (checked && board.settings.doneNow) { if (last) archiveList(list); else archive(t); }
+          // The last todo on one of your own lists: offer to archive it, not on the
+          // notebook's pages. Checked todos stay put a moment so the offer can be taken.
+          if (checked && board.settings.doneNow && !(list && canArchive(list))) archive(t);
           commit();
         });
-        if (last) toast(board.settings.doneNow ? `All done. ${list.name} moved to Done.` : `All done. ${list.name} moves to Done tomorrow morning.`, undo);
-        else if (checked) toast(board.settings.doneNow ? "Nice. Moved to Done." : "Nice. It moves to Done tomorrow morning.", undo);
-      } }),
+        if (checked && list && canArchive(list)) {
+          toast(`Everything on ${list.name} is done.`, undo, { label: "Archive list", run: () => archiveNow(list) });
+        } else if (checked) toast(board.settings.doneNow ? "Nice. Moved to Done." : "Nice. It moves to Done tomorrow morning.", undo);
+      } })),
       text,
       el("span", { class: "unsynced-dot", title: "Not synced yet", "aria-label": "Not synced yet" }),
       el("button", { class: "icon-btn more", "aria-label": "Todo options", "aria-expanded": "false", "data-pop-trigger": true, onclick: e => todoPop(e, t, row, text) }, "•••"),
@@ -605,7 +651,7 @@
     popAt(row, e.currentTarget,
       el("div", { class: "lbl" }, "Move to"),
       lists().filter(l => l.id !== t.listId).map(l => el("button", { class: "item", onclick: () => { toast(`Moved to ${l.name}`, undoable([t], () => moveTodo(t, l.id, null))); } },
-        el("span", { class: "dot", style: `background:${l.color}` }), l.name)),
+        el("span", { class: "dot", style: `background:${safeColor(l.color)}` }), l.name)),
       el("div", { class: "lbl" }, "This todo"),
       el("button", { class: "item", onclick: () => { closePop(); editText(text, t); } }, "Edit text"),
       el("button", { class: "item danger", onclick: () => { toast("Deleted", undoable([t], () => { touch(t, { deleted: true }); commit(); })); } }, "Delete"),
@@ -622,7 +668,7 @@
         style: `background:${c}`, "aria-label": "Color " + c, "aria-pressed": String(c === list.color), onclick: () => apply(c),
       }))),
       el("label", { class: "custom-color" },
-        el("input", { type: "color", value: list.color, oninput: ev => preview(ev.target.value), onchange: ev => apply(ev.target.value) }),
+        el("input", { type: "color", value: safeColor(list.color), oninput: ev => preview(ev.target.value), onchange: ev => apply(ev.target.value) }),
         "Custom color"),
     );
     placePop(head, e.currentTarget, "left");
@@ -635,17 +681,16 @@
     const confirmBox = el("div", { hidden: true });
     const leaveBox = el("div", { hidden: true });
     const canShare = !list.shared && list.role !== "now" && list.role !== "tomorrow";
-    const canTemp = !list.role; // Now, Tomorrow and Later are the notebook's pages; they stay
     popAt(head, e.currentTarget,
       list.shared ? el("div", { class: "lbl shared-lbl" }, sharedWith(list)) : null,
-      list.temp ? el("div", { class: "lbl shared-lbl" }, "Goes to Done once everything on it is checked.") : null,
       el("button", { class: "item", onclick: () => { closePop(); const i = document.getElementById("name-" + list.id); i.focus(); i.select(); } }, "Rename"),
       el("button", { class: "item", disabled: idx === 0, onclick: () => swapLists(list, ls[idx - 1]) }, "Move list left"),
       el("button", { class: "item", disabled: idx === ls.length - 1, onclick: () => swapLists(list, ls[idx + 1]) }, "Move list right"),
-      canTemp ? el("button", { class: "item", onclick: () => setTemp(list, !list.temp) }, list.temp ? "Make it a regular list" : "Make temporary") : null,
-      list.temp ? el("button", { class: "item", onclick: () => finishNow(list) }, "Move to Done now") : null,
+      !list.role ? el("button", { class: "item", disabled: !canArchive(list), title: canArchive(list) ? "" : "Check off everything on it first", onclick: () => archiveNow(list) }, "Archive list") : null,
+      !list.role && !canArchive(list) ? el("div", { class: "lbl shared-lbl" }, count ? "Check off everything on it to archive it." : "Add and check off todos to archive it.") : null,
       canShare ? el("button", { class: "item", onclick: () => { closePop(); shareList(list); } }, "Share list…") : null,
       list.shared ? el("button", { class: "item", onclick: () => { closePop(); shareList(list); } }, "Invite someone…") : null,
+      list.shared ? el("button", { class: "item", onclick: () => { closePop(); manageShared(list); } }, "People and links…") : null,
       list.shared ? el("button", { class: "item danger", onclick: () => { leaveBox.hidden = false; } }, "Leave shared list…") : null,
       !list.shared && fallback ? el("button", { class: "item danger", onclick: () => { confirmBox.hidden = false; } }, "Delete list…") : null,
       confirmBox, leaveBox,
@@ -669,25 +714,15 @@
     );
   }
 
-  // Marking a list temporary when everything on it is already checked finishes it
-  // the same way checking the last todo would.
-  function setTemp(list, on) {
+  // Archives a list whose todos are all checked: it and its todos go to Done. On a
+  // shared list that's for everyone on it, like a rename.
+  function archiveNow(list) {
     closePop();
-    const undo = undoable([list, ...todosIn(list.id)], () => {
-      touch(list, { temp: on });
-      if (on && board.settings.doneNow && listFinished(list)) archiveList(list);
-      commit();
-    });
-    toast(!on ? `${list.name} is a regular list again.` : list.archived ? `Everything on ${list.name} was checked, so it moved to Done.` :
-      `${list.name} is temporary. Once everything on it is checked, it moves to Done${board.settings.doneNow ? "" : " the next morning"}.`, undo);
-  }
-  // For a trip that's over before the list is: everything left goes to Done with it.
-  function finishNow(list) {
-    closePop();
+    if (!canArchive(list)) return;
     const undo = undoable([list, ...todosIn(list.id)], () => { archiveList(list); commit(); });
-    toast(`${list.name} moved to Done.`, undo);
+    toast(list.shared ? `${list.name} archived for everyone on it. It's in Done.` : `${list.name} archived. It's in Done.`, undo);
   }
-  // Brings a finished temporary list back to the board with every todo on it unchecked,
+  // Brings an archived list back to the board with every todo on it unchecked,
   // ready for the next trip.
   function useAgain(list) {
     if (lists().length >= MAX_LISTS) { toast(`You have ${MAX_LISTS} lists already. Delete one to bring ${list.name} back.`, 5000); return; }
@@ -700,9 +735,10 @@
     toast(`${list.name} is back with ${items.length} todo${items.length === 1 ? "" : "s"} to check.`, undo);
     document.querySelector(`[data-list="${list.id}"]`)?.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" });
   }
-  // Takes a finished list off the Finished lists shelf. Its todos stay in Done.
+  // Takes a list off the Archived lists shelf. Its todos stay in Done. For a shared
+  // list that means leaving it (the Worker treats a deleted shared list that way).
   function forgetList(list) {
-    toast(`Removed ${list.name}. Its todos stay in Done.`, undoable([list], () => { touch(list, { deleted: true }); commit(); }));
+    toast(list.shared ? `Left ${list.name}. Its todos stay in Done.` : `Removed ${list.name}. Its todos stay in Done.`, undoable([list], () => { touch(list, { deleted: true }); commit(); }));
   }
 
   function swapLists(a, b) {
@@ -782,6 +818,45 @@
         e instanceof TypeError ? "Couldn't reach the sync service." : e.message;
       toast("Couldn't share: " + msg, 7000);
     }
+  }
+
+  // People and links: who's on a shared list, which of its links are still open (any
+  // of them can be withdrawn), and, for the list's owner, taking someone off it.
+  const peopleDlg = document.getElementById("peopleDlg");
+  async function manageShared(list) {
+    if (!canUseShared()) { openSettingsTo("sync"); return; }
+    const title = document.getElementById("peopleTitle"), body = document.getElementById("peopleBody"), msg = document.getElementById("peopleMsg");
+    title.textContent = list.name;
+    body.replaceChildren(el("p", {}, "Loading…"));
+    msg.textContent = ""; msg.className = "msg";
+    if (!peopleDlg.open) peopleDlg.showModal();
+    const sid = list.shared;
+    async function load() {
+      let info;
+      try { info = await sharedFetch("/" + encodeURIComponent(sid)); }
+      catch (e) { body.replaceChildren(el("p", {}, e instanceof TypeError ? "Couldn't reach the sync service." : e.message)); return; }
+      const people = el("ul", { class: "invite-list" }, info.members.map(m => el("li", {},
+        el("span", {}, m.board === info.me ? `${m.name} (you)` : m.name),
+        info.owner && m.board !== info.me ? el("button", { class: "btn danger", type: "button", onclick: async (ev) => {
+          ev.currentTarget.disabled = true;
+          try { await sharedFetch("/" + encodeURIComponent(sid) + "/members/" + encodeURIComponent(m.board), { method: "DELETE" }); msg.textContent = `${m.name} is off ${info.name}. The list leaves their board on their next sync.`; await sync(); load(); }
+          catch (e) { msg.className = "msg bad"; msg.textContent = "Couldn't remove them: " + e.message; }
+        } }, "Remove") : null)));
+      const links = info.invites.length
+        ? el("ul", { class: "invite-list" }, info.invites.map(i => el("li", {},
+            el("span", {}, `${i.mine ? "Your link" : `${i.byName || "Someone"}'s link`} · works until ${shortDate(i.expires)}`),
+            el("button", { class: "btn", type: "button", onclick: async (ev) => {
+              ev.currentTarget.disabled = true;
+              try { await sharedFetch("/" + encodeURIComponent(sid) + "/invites/" + encodeURIComponent(i.code), { method: "DELETE" }); msg.textContent = "Link withdrawn. It won't work anymore."; load(); }
+              catch (e) { msg.className = "msg bad"; msg.textContent = "Couldn't withdraw it: " + e.message; }
+            } }, "Withdraw"))))
+        : el("p", {}, "No open links. Invite someone… in the list's ••• menu makes one.");
+      body.replaceChildren(...[
+        el("h3", {}, "People"), people,
+        info.owner ? null : el("p", { class: "note" }, `${info.members[0].name} has been on it longest, so they can take people off it.`),
+        el("h3", {}, "Links not used yet"), links].filter(Boolean));
+    }
+    load();
   }
 
   async function leaveList(list) {
@@ -892,7 +967,7 @@
         if (a.archivedDay !== last) { last = a.archivedDay; body.append(el("div", { class: "day-label" }, a.archivedDay ? pretty(a.archivedDay, { weekday: "short", month: "short", day: "numeric" }) : "Earlier")); }
         const target = restoreTarget(a);
         body.append(el("div", { class: "todo done" },
-          el("span", { class: "dot", style: `background:${a.fromColor}` }),
+          el("span", { class: "dot", style: `background:${safeColor(a.fromColor)}` }),
           el("div", { class: "text" }, highlight(a.text)),
           el("button", { type: "button", class: "put-back", title: `Put back on ${target ? target.name : "a list"}`, "aria-label": `Put “${a.text}” back on ${target ? target.name : "a list"}`, onclick: () => restore(a) },
             el("span", { "aria-hidden": "true" }, "↩"), " ", target ? target.name : "")));
@@ -902,22 +977,22 @@
     return col;
   }
 
-  // Finished temporary lists, above the finished todos. Shown unless a search or
-  // filter is narrowing Done to something else.
+  // Archived lists, above the finished todos. Shown unless a search or filter is
+  // narrowing Done to something else.
   function finishedShelf() {
     const q = fold(doneView.q.trim());
     const shown = finishedLists().filter(l => (!doneView.list || doneView.list === l.name) && (doneView.range === "all" || (l.archivedDay || "") >= rangeStart(doneView.range)) && (!q || fold(l.name).includes(q)));
     if (!shown.length) return null;
     return el("div", { class: "shelf" },
-      el("div", { class: "day-label" }, "Finished lists"),
+      el("div", { class: "day-label" }, "Archived lists"),
       shown.map(l => {
         const n = board.todos.filter(t => !t.deleted && t.archived && t.listId === l.id).length;
-        return el("div", { class: "shelf-item", style: `--c:${l.color}` },
-          el("span", { class: "dot", style: `background:${l.color}` }),
+        return el("div", { class: "shelf-item", style: `--c:${safeColor(l.color)}` },
+          el("span", { class: "dot", style: `background:${safeColor(l.color)}` }),
           el("button", { type: "button", class: "shelf-name", title: `Show ${l.name}'s todos`, onclick: () => { doneView.list = l.name; doneView.q = ""; doneView.range = "all"; render(); } },
             el("strong", {}, l.name), el("small", {}, `${n} todo${n === 1 ? "" : "s"}${l.archivedDay ? " · " + pretty(l.archivedDay, { month: "short", day: "numeric" }) : ""}`)),
           el("button", { type: "button", class: "put-back", title: `Bring ${l.name} back with everything unchecked`, onclick: () => useAgain(l) }, el("span", { "aria-hidden": "true" }, "↩"), " Use again"),
-          el("button", { type: "button", class: "icon-btn", title: "Remove from Finished lists", "aria-label": `Remove ${l.name} from Finished lists`, onclick: () => forgetList(l) }, "×"));
+          el("button", { type: "button", class: "icon-btn", title: "Remove from Archived lists", "aria-label": `Remove ${l.name} from Archived lists`, onclick: () => forgetList(l) }, "×"));
       }));
   }
 
@@ -1131,11 +1206,13 @@
   // The second argument is either how long to show the toast (ms) or what Undo needs, from undoable().
   let toastMs = 2400;
   function armToast() { clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, toastMs); }
-  function toast(msg, extra) {
+  // An optional action ({ label, run }) adds a button before Undo, like "Archive list".
+  function toast(msg, extra, action) {
     const undoInfo = Array.isArray(extra) ? extra : null;
     undoEntries = undoInfo && undoInfo.length ? undoInfo : null;
-    toastMs = typeof extra === "number" ? extra : undoEntries ? 6000 : 2400;
+    toastMs = typeof extra === "number" ? extra : undoEntries || action ? 6000 : 2400;
     toastEl.replaceChildren(el("span", {}, msg));
+    if (action) toastEl.append(el("button", { class: "toast-undo", type: "button", onclick: () => { clearTimeout(toastTimer); hideToast(); action.run(); } }, action.label));
     if (undoEntries) toastEl.append(el("button", { class: "toast-undo", type: "button", onclick: () => { clearTimeout(toastTimer); undo(); } }, "Undo"));
     toastEl.hidden = false;
     // Showing it again puts it above a dialog that opened after it.
@@ -1236,7 +1313,7 @@
   // different board: load it instead of merging this device's lists into it.
   function useSync(url, token) {
     if (url !== local.syncUrl || token !== local.syncToken || local.otherBoard) {
-      local.synced = false;
+      local.synced = false; local.sentAt = 0;
       if (local.board) { local.switching = true; local.board = ""; }
       Object.assign(local, { boardName: "", boardKind: "", admin: false, otherBoard: "" });
       rememberServer({ lists: [], todos: [], settings: {} });
@@ -1263,7 +1340,9 @@
     document.getElementById("deleteBox").hidden = true;
     deviceMsg.textContent = "";
     document.getElementById("invites").hidden = !(on && local.admin);
+    document.getElementById("advanced").hidden = !on;
     if (on && local.admin) loadInvites();
+    if (on) loadDevices();
   }
   // Says what happened right under the button (a toast is easy to miss in
   // Settings) and what to do next with the link.
@@ -1272,9 +1351,14 @@
   deviceBtn.closest(".row").after(deviceMsg);
   let deviceTimer;
   deviceBtn.addEventListener("click", async () => {
-    const how = await shareLink(appLink({ connect: local.syncToken, sync: workerBase() }), "Now or Later");
+    // The link carries a one-time code that works for a day, not this device's token.
+    let code;
+    try { ({ code } = await syncApi("/devices", { method: "POST" })); }
+    catch (e) { deviceMsg.className = "msg device-msg bad"; deviceMsg.textContent = "Couldn't make a link: " + (e instanceof TypeError ? "the sync service can't be reached." : e.message); return; }
+    const how = await shareLink(appLink({ device: code, sync: workerBase() }), "Now or Later");
     if (!how) return;
-    const next = "Open it on your other device and tap Connect. That device then syncs with " + boardLabel(local.board) + ".";
+    const next = "Open it on your other device within a day and tap Connect. It works once. That device then syncs with " + boardLabel(local.board) + ".";
+    loadDevices();
     deviceMsg.className = "msg device-msg ok";
     deviceMsg.textContent = {
       copied: "Link copied. Send it to your other device (AirDrop, Messages or Mail to yourself, or a note). " + next,
@@ -1287,6 +1371,35 @@
       deviceTimer = setTimeout(() => { deviceBtn.textContent = "Copy link for another device"; }, 2500);
     }
   });
+
+  // Calls the sync service with this device's token. Used for device links.
+  async function syncApi(path, opts = {}) {
+    const res = await fetch(workerBase() + path, Object.assign({ cache: "no-store" }, opts, {
+      headers: { "Authorization": "Bearer " + local.syncToken, "Content-Type": "application/json" },
+    }));
+    if (res.status === 410) throw boardGone();
+    let body = {};
+    try { body = await res.json(); } catch (e) {}
+    if (res.status === 404 && path === "/devices" && !opts.method) throw new Error("old service");
+    if (!res.ok) throw new Error(res.status === 404 ? "This sync service needs an update for device links." : body.error || "The sync service answered " + res.status + ".");
+    return body;
+  }
+  // Devices connected with a link each have their own token, listed here so a lost
+  // phone can be taken off. Devices set up another way (an invite, or by hand) aren't listed.
+  async function loadDevices() {
+    const ul = document.getElementById("deviceList"), note = document.getElementById("deviceNote");
+    try {
+      const { devices } = await syncApi("/devices");
+      ul.replaceChildren(...devices.map(d => el("li", {},
+        el("span", {}, `${d.label || "A device"}${d.me ? " (this one)" : ""} · added ${shortDate(d.created)}`),
+        el("button", { class: "btn danger", type: "button", onclick: async (ev) => {
+          ev.currentTarget.disabled = true;
+          try { await syncApi("/devices/" + encodeURIComponent(d.id), { method: "DELETE" }); note.textContent = `Removed. That ${d.label || "device"} stops syncing.`; loadDevices(); }
+          catch (e) { note.textContent = "Couldn't remove it: " + e.message; }
+        } }, d.me ? "Sign out" : "Remove"))));
+      note.textContent = devices.length ? "" : "No devices added with a link yet.";
+    } catch (e) { ul.replaceChildren(); note.textContent = e.message === "old service" ? "" : e.message; }
+  }
 
   // Quick add from Shortcuts: the Worker's POST /add needs its address and this board's token.
   const quickMsg = document.getElementById("quickMsg");
@@ -1376,13 +1489,15 @@
   let pendingLink = null;
   function readLink() {
     const p = new URLSearchParams(location.hash.slice(1));
-    const sync = (p.get("sync") || "").trim(), join = p.get("join"), connect = p.get("connect"), share = p.get("share");
-    if (!(join || connect || share)) return;
+    const sync = (p.get("sync") || "").trim(), join = p.get("join"), share = p.get("share"), device = p.get("device");
+    // Links from before 1.17 carried the token itself (#connect=). They still work.
+    const connect = p.get("connect");
+    if (!(join || connect || share || device)) return;
     history.replaceState(null, "", location.pathname + location.search);
     let host = "";
     try { const u = new URL(sync); if (u.protocol === "https:") host = u.host; } catch (e) {}
     if (!host) { toast("That link is missing its sync address.", 5000); return; }
-    pendingLink = { sync: sync.replace(/\/+$/, ""), join, connect, share };
+    pendingLink = { sync: sync.replace(/\/+$/, ""), join, connect, share, device };
     if (share) { showShareLink(host); return; }
     const had = syncConfigured() && local.synced;
     const what = join
@@ -1448,7 +1563,16 @@
     msg.className = "msg"; msg.textContent = link.join ? "Joining…" : "Connecting…"; go.disabled = true;
     try {
       let token = link.connect;
-      if (link.join) {
+      if (link.device) {
+        const res = await fetch(link.sync + "/devices/connect", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: link.device, label: deviceName() }) });
+        if (res.status === 404) throw new Error("This link has already been used or is more than a day old. Make a new one on your other device.");
+        if (!res.ok) throw new Error("The sync service answered " + res.status + ".");
+        token = (await res.json()).token;
+        // The code is used up; if the sync below fails, trying again uses the token.
+        link.connect = token; link.device = null;
+        useSync(link.sync, token);
+      } else if (link.join) {
         const res = await fetch(link.sync + "/join", { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ code: link.join, name: document.getElementById("joinName").value.trim() }) });
         if (res.status === 404) throw new Error("This invite has already been used or has expired. Ask for a new one.");
@@ -1472,7 +1596,7 @@
       msg.className = "msg bad"; msg.textContent = e instanceof TypeError ? "Couldn't reach the sync service. Check the connection and try again." : e.message;
     }
   });
-  window.addEventListener("hashchange", () => { readMove().then((moving) => { if (!moving) readLink(); }); });
+  window.addEventListener("hashchange", readLink);
 
   // ---------- appearance (per device) ----------
   // Dark mode follows the system unless this device picked Light or Dark in Settings.
@@ -1503,7 +1627,7 @@
   const hapticsSupported = isIOS || (canVibrate && matchMedia("(pointer: coarse)").matches);
   let hapticSwitch = null;
   function haptic(kind) {
-    if (!local.haptics || !hapticsSupported) return;
+    if (!hapticsSupported) return;
     if (canVibrate) { try { navigator.vibrate(kind === "drop" ? 18 : kind === "lift" ? 12 : 6); } catch (e) {} return; }
     if (!hapticSwitch) {
       hapticSwitch = el("label", { "aria-hidden": "true", style: "display:none" }, el("input", { type: "checkbox", switch: true, tabindex: "-1" }));
@@ -1511,15 +1635,9 @@
     }
     hapticSwitch.click();
   }
-  document.getElementById("hapticsRow").hidden = !hapticsSupported;
-  document.getElementById("haptics").addEventListener("change", e => {
-    local.haptics = e.target.checked; write(LOCAL_KEY, local);
-    if (local.haptics) haptic("drop");
-  });
   document.getElementById("openSettings").addEventListener("click", () => {
     const t = ["light", "dark"].includes(local.theme) ? local.theme : "system";
     document.querySelector(`input[name="theme"][value="${t}"]`).checked = true;
-    document.getElementById("haptics").checked = !!local.haptics;
   });
 
   // ---------- keyboard shortcuts ----------
@@ -1565,8 +1683,29 @@
   const isTyping = a => a && (a.isContentEditable || a.tagName === "TEXTAREA" || a.tagName === "SELECT" ||
     (a.tagName === "INPUT" && !["checkbox", "radio", "button", "submit", "color"].includes(a.type)));
   const openSettingsDlg = () => { closePop(); if (keysDlg.open) keysDlg.close(); if (!dlg.open) document.getElementById("openSettings").click(); };
-  const showKeys = () => { closePop(); if (dlg.open) dlg.close(); if (!keysDlg.open) keysDlg.showModal(); };
-  document.getElementById("showKeys").addEventListener("click", showKeys);
+  const showKeys = () => { closePop(); if (dlg.open) dlg.close(); showKeysAlt(); if (!keysDlg.open) keysDlg.showModal(); };
+  // The shortcuts that work anywhere (N, 1–9, comma, ?) are single keys unless this
+  // device asks for Option (Alt) with them, so speaking or typing a word elsewhere
+  // can't set them off. It's chosen in the shortcuts sheet itself.
+  const keysAlt = document.getElementById("keysAlt");
+  function showKeysAlt() {
+    keysAlt.checked = !!local.keysAlt;
+    keysDlg.querySelectorAll(".opt").forEach(k => { k.hidden = !local.keysAlt; });
+  }
+  keysAlt.addEventListener("change", () => { local.keysAlt = keysAlt.checked; write(LOCAL_KEY, local); showKeysAlt(); });
+  // The key a shortcut means. With Option held, e.key is a special character on a Mac
+  // (Option-N is a dead key), so read the physical key instead.
+  function globalKey(e) {
+    if (e.metaKey || e.ctrlKey) return "";
+    if (!local.keysAlt) return e.altKey ? "" : e.key;
+    if (!e.altKey) return "";
+    const c = e.code || "";
+    if (c === "KeyN") return "n";
+    if (/^Digit[1-9]$/.test(c)) return c.slice(5);
+    if (c === "Slash") return "?";
+    if (c === "Comma") return ",";
+    return "";
+  }
   // A click or tap anywhere ends keyboard selection, so render() won't pull focus back.
   document.addEventListener("pointerdown", () => { kbSel = null; }, true);
 
@@ -1574,7 +1713,8 @@
     if (e.defaultPrevented || e.isComposing || drag) return;
     const k = e.key;
     if ((e.metaKey || e.ctrlKey) && k === ",") { e.preventDefault(); openSettingsDlg(); return; }
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const g = globalKey(e);
+    if (!g && (e.metaKey || e.ctrlKey || e.altKey)) return;
     if (document.querySelector("dialog[open]")) return; // dialogs close themselves on Esc
     const a = document.activeElement;
     if (isTyping(a)) {
@@ -1582,16 +1722,17 @@
       return;
     }
     if (openPop) return; // Esc closes the menu (handled above)
-    if (k === "?") { e.preventDefault(); showKeys(); return; }
-    if (k === ",") { e.preventDefault(); openSettingsDlg(); return; }
-    if (!e.shiftKey && (k === "n" || k === "N")) {
+    if (g === "?") { e.preventDefault(); showKeys(); return; }
+    if (g === ",") { e.preventDefault(); openSettingsDlg(); return; }
+    if (!e.shiftKey && (g === "n" || g === "N")) {
       e.preventDefault(); focusAdd(lists().find(l => l.role === "now") || lists()[0]); return;
     }
-    if (/^[1-9]$/.test(k)) {
-      const l = lists()[Number(k) - 1];
+    if (/^[1-9]$/.test(g)) {
+      const l = lists()[Number(g) - 1];
       if (l) { e.preventDefault(); focusAdd(l); }
       return;
     }
+    if (e.altKey) return; // the rest only act on the selected todo, without modifiers
 
     const row = a && a.matches && a.matches(".todo[data-id]") ? a : null;
     const t = row ? todoById(row.dataset.id) : null;
@@ -1810,7 +1951,7 @@
       document.getElementById("snapRestore").disabled = none;
       document.getElementById("snapDownload").disabled = none;
       document.getElementById("cloudInfo").textContent =
-        `The sync Worker saves a copy of ${boardLabel(got.board || local.board)} every night and keeps it for ${got.days || 30} days.` +
+        `The sync Worker saves a copy of ${boardLabel(got.board || local.board)} each night it changes, and at least once a week, and keeps it for ${got.days || 30} days.` +
         (none ? " The first one is saved tonight." : "");
       box.hidden = false;
     } catch (e) {
@@ -1841,11 +1982,22 @@
   });
 
   // ---------- day changes & lifecycle ----------
+  // On a new day, catch up with the other devices before the morning moves anything.
+  // Otherwise this device would move yesterday's Tomorrow into Now from its old copy,
+  // and those moves, being the newest edits, would undo anything changed elsewhere
+  // this morning (a rename, a todo put back in Tomorrow or brought back from Done).
+  let dayChecking = null;
   function checkDay() {
-    if (rollover()) commit(); else render();
+    if (!dayChecking) dayChecking = (async () => {
+      try {
+        if (local.lastDay !== todayKey() && syncConfigured() && local.synced && !local.otherBoard && navigator.onLine) await pull(true);
+      } catch (e) {}
+      if (rollover()) commit(); else if (!isBusyEditing()) render();
+    })().finally(() => { dayChecking = null; });
+    return dayChecking;
   }
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") { checkDay(); sync(); }
+    if (document.visibilityState === "visible") checkDay().then(sync);
   });
   window.addEventListener("online", () => { idleStatus(); sync(); });
   // A browser window on a Mac stays "visible" behind other windows, so coming back
@@ -1956,76 +2108,6 @@
 
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
     navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(() => {});
-  }
-
-  // ---------- moving to the new address ----------
-  // The app moved from tweetingbirds.com/now-and-then/ to its own subdomain. Browsers
-  // keep localStorage per origin, so lists don't follow on their own. At the old
-  // address the app offers to carry this device's storage over in the link's #move=
-  // (gzipped, after the #, so it never reaches a server). The new address writes it
-  // into its own storage. sw.js keeps the old address working from its cache after
-  // GitHub starts redirecting it, so devices that haven't moved yet can still move.
-  const NEW_ORIGIN = "https://now-or-later.tweetingbirds.com";
-  const MOVE_KEYS = [BOARD_KEY, LOCAL_KEY, SYNCED_KEY];
-  const atOldAddress = location.origin !== NEW_ORIGIN &&
-    /^(www\.)?tweetingbirds\.(com|github\.io)$/.test(location.hostname) && /^\/now-(and-then|or-later)(\/|$)/.test(location.pathname);
-  const b64url = (bytes) => { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
-  const unb64url = (str) => Uint8Array.from(atob(str.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
-  const pipe = async (bytes, stream) => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
-  async function movePayload() {
-    const keys = {};
-    for (const k of MOVE_KEYS) { const v = localStorage.getItem(k); if (v != null) keys[k] = v; }
-    const bytes = new TextEncoder().encode(JSON.stringify({ v: 1, keys }));
-    if (typeof CompressionStream === "function") return "z." + b64url(await pipe(bytes, new CompressionStream("gzip")));
-    return "j." + b64url(bytes);
-  }
-  async function readMovePayload(str) {
-    const [kind, body] = [str.slice(0, 2), str.slice(2)];
-    let bytes = unb64url(body);
-    if (kind === "z.") bytes = await pipe(bytes, new DecompressionStream("gzip"));
-    else if (kind !== "j.") throw new Error("unknown move format");
-    const data = JSON.parse(new TextDecoder().decode(bytes));
-    if (!data || data.v !== 1 || !data.keys || !data.keys[BOARD_KEY]) throw new Error("nothing to move");
-    JSON.parse(data.keys[BOARD_KEY]); // must be a real board
-    return data.keys;
-  }
-  const moveDlg = document.getElementById("moveDlg");
-  const moveHost = NEW_ORIGIN.replace("https://", "");
-  async function offerMove() {
-    if (!atOldAddress || !moveDlg) return;
-    try { const res = await fetch(NEW_ORIGIN + "/version.json", { cache: "no-store" }); if (!res.ok) return; } catch { return; }
-    document.getElementById("moveTitle").textContent = local.movedAt ? "Now or Later has moved" : "Now or Later has a new address";
-    document.getElementById("moveWhat").textContent = (local.movedAt
-      ? `You already moved this device's lists to ${moveHost}. Use the app there from now on.`
-      : `Now or Later now lives at ${moveHost}. Tap Move to open it there with the lists on this device` + (syncConfigured() ? " and your sync already set up." : "."))
-      + (matchMedia("(display-mode: standalone)").matches ? " If you added the app to your Home Screen, add the new address too, and remove this one once your lists show up there." : "");
-    document.getElementById("moveGo").textContent = local.movedAt ? "Open new address" : "Move";
-    document.getElementById("moveMsg").textContent = "";
-    if (!dlg.open && !joinDlg.open) moveDlg.showModal();
-  }
-  moveDlg?.querySelector("#moveGo").addEventListener("click", async () => {
-    const msg = document.getElementById("moveMsg");
-    try {
-      const payload = await movePayload();
-      local.movedAt = new Date().toISOString(); write(LOCAL_KEY, local);
-      location.href = NEW_ORIGIN + "/#move=" + payload;
-    } catch (e) { msg.className = "msg bad"; msg.textContent = "Couldn't pack up your lists. Download a backup in Settings and restore it at " + moveHost + "."; }
-  });
-  // At the new address: #move=<payload> brings in the old address's storage.
-  async function readMove() {
-    const p = new URLSearchParams(location.hash.slice(1)), str = p.get("move");
-    if (!str) return false;
-    history.replaceState(null, "", location.pathname + location.search);
-    let keys;
-    try { keys = await readMovePayload(str); } catch (e) { toast("That move link didn't come through whole. Download a backup at the old address and restore it here.", 7000); return true; }
-    const theirs = JSON.parse(keys[LOCAL_KEY] || "{}");
-    if (theirs.syncToken && theirs.syncToken === local.syncToken && theirs.syncUrl === local.syncUrl) { toast("Your lists are already here.", 4000); return true; }
-    if (!local.pristine && !confirm("Replace the lists on this device with the ones from the old address? The lists here now will be lost unless they're synced.")) return true;
-    for (const [k, v] of Object.entries(keys)) localStorage.setItem(k, v);
-    const moved = Object.assign(read(LOCAL_KEY) || {}, { movedAt: null, movedIn: new Date().toISOString() });
-    write(LOCAL_KEY, moved);
-    location.reload();
-    return true;
   }
 
   // ---------- quick add from anywhere ----------
@@ -2154,7 +2236,7 @@
   // After an invite or device link's dialog closes (joined or not), a first visit still gets its welcome.
   joinDlg.addEventListener("close", () => { if (local.welcome === "pending") setTimeout(showWelcome, 250); });
   function maybeWelcome() {
-    if (local.welcome !== "pending" || atOldAddress) return;
+    if (local.welcome !== "pending") return;
     if (document.querySelector("dialog[open]")) return; // a link's dialog is up; its close shows the welcome
     showWelcome();
   }
@@ -2176,14 +2258,13 @@
   // ---------- boot ----------
   applyTheme();
   repairOrphans();
-  rollover();
   write(BOARD_KEY, board);
   idleStatus();
   render();
-  sync();
+  // A new morning waits for the synced board first (see checkDay).
+  checkDay().then(sync);
   checkForUpdate();
-  readMove().then((moving) => { if (!moving) { quickAdd(); readLink(); offerMove(); maybeWelcome(); } });
-
-  // exposed for tests
-  window.__nat = { mergeBoards, restoreBoard, readBackup, boardCsv, backupJson, movePayload, get board() { return board; } };
+  quickAdd(); readLink(); maybeWelcome();
+  if (recovered === "synced") toast("This device's lists couldn't be read, so they're being loaded from sync.", 6000);
+  else if (recovered === "local") toast("This device's lists couldn't be read. Restore a backup from Settings if you have one.", 8000);
 })();
