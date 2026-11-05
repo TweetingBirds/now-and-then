@@ -3,7 +3,7 @@ name: Deploy app to GitHub Pages
 on:
   push:
     branches: [main]
-    paths: ["app/**", ".github/workflows/pages.yml"]
+    paths: ["app/**", "scripts/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -23,6 +23,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+      - name: Checks
+        run: bash scripts/check.sh
       - name: Stamp version and build
         run: |
           BUILD_NUMBER="${{ github.run_number }}"

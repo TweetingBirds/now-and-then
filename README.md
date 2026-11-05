@@ -7,11 +7,12 @@ A notebook-style todo list, made for Tiffany. It works the way her paper noteboo
 - Each morning, unfinished Tomorrow todos move into Now (this can be turned off in Settings).
 - Lists can be renamed, recolored, reordered and added, up to 10.
 - Todos move between lists by dragging the ⋮⋮ handle, or with the ••• menu.
+- A list you added (not Now, Tomorrow or Later) can be archived once everything on it is checked: a toast offers **Archive list** when the last todo is checked, and the list's ••• menu has it too. Nothing archives on its own. Archived lists sit at the top of Done, don't count toward the 10, and **Use again** brings one back unchecked. Archiving a shared list archives it for everyone on it.
 - Deleting, moving or checking off a todo (or deleting a list, or putting a todo back from Done) shows a toast with **Undo** for a few seconds. Cmd+Z or Ctrl+Z works too while it's showing. Undo syncs like any other edit.
 - **Done** can be searched and filtered by when a todo was finished (today, this week, this month) and which list it came from. The ↩ button on a finished todo puts it back, unchecked, on its list.
 - Dark mode follows the system, or pick Light or Dark per device in Settings. Phones give a small buzz when a todo is picked up and dropped (Android, and iPhone on iOS 18 or later).
-- On a Mac, keyboard shortcuts cover adding, moving and checking off todos. Press **?** to see them.
-- Sync starts from an **invite link**: open it, tap **Join**, and that person has their own synced board. **Copy link for another device** in Settings adds a phone, tablet or computer to the same board, and **Delete synced board…** removes the board and its backups from the Worker.
+- On a Mac, keyboard shortcuts cover adding, moving and checking off todos. Press **?** to see them. A toggle at the top of that sheet makes the shortcuts that work anywhere (N, 1–9 and ?) need Option, for people who find single keys get in the way. Single keys are the default.
+- Sync starts from an **invite link**: open it, tap **Join**, and that person has their own synced board. **Copy link for another device** in Settings adds a phone, tablet or computer to the same board with a link that works once, within a day. Settings → Sync → **Advanced** lists those devices (each can be removed), quick add, invites and **Delete synced board…**.
 - Settings is grouped into Your day, Look and feel, Sync and backups (each its own page) and About. About links to **What's New**, **Support & FAQ**, **Privacy** and **Terms**. What's New is marked *New* after an update until it's opened.
 
 It's a progressive web app: open it in Safari or Chrome and choose **Add to Home Screen** to install it. It works offline, and syncs through a small Cloudflare Worker when one is set up.
@@ -25,6 +26,7 @@ It's a progressive web app: open it in Safari or Chrome and choose **Add to Home
 | `app/sw.js` | Service worker for offline use. Its cache name is stamped with the build on each deploy. |
 | `worker/` | Cloudflare Worker that stores each person's board in Workers KV. Tests: `npm test` in `worker/` (they also run before every deploy). |
 | `docs/self-hosting.md` | How anyone can run their own sync Worker on Cloudflare's free plan. Linked from Support. |
+| `scripts/check.sh` | Fast checks: `node --check` on every script, the Worker tests, and that `APP_VERSION` matches the *Latest* card on What's New. Runs on every pull request (`.github/workflows/checks.yml`) and before each Pages deploy. |
 | `.github/workflows/pages.yml` | Deploys `app/` to GitHub Pages on every push to `main`, stamping the build number, commit and date into the app and writing `version.json`. |
 | `.github/workflows/worker.yml` | Deploys the Worker to Cloudflare on pushes that change `worker/`. |
 
@@ -50,7 +52,9 @@ The app is called **Now or Later** (it was Now and Then until 1.11). The reposit
 In the repo, go to **Settings → Pages** and set **Source** to **GitHub Actions**. The app is served at
 `https://now-or-later.tweetingbirds.com/`, set as this repo's **Custom domain** on the same page (a `CNAME` file isn't used, because Pages deploys from Actions). DNS has a `CNAME` record `now-or-later` → `tweetingbirds.github.io`.
 
-It used to live at `https://tweetingbirds.com/now-and-then/`. GitHub now redirects that address to the subdomain. Browsers keep each address's storage separately, so a device that used the old address shows a **Move** dialog there: it opens the new address with that device's lists and sync settings in the link (after the `#`, gzipped, never sent to a server), and the new address saves them. `sw.js` keeps serving the cached app at the old address after the redirect starts, so devices can still move later. A device that never opened version 1.12 or later at the old address can't move this way: sync it again at the new address with its token or an invite, or restore a backup.
+It used to live at `https://tweetingbirds.com/now-and-then/`, and GitHub redirects that address to the subdomain. Everyone has moved, so the 1.12 **Move** dialog was removed in 1.17.
+
+Every page has a Content Security Policy in a `<meta>` tag: scripts only from the site itself (plus a hash for the small inline theme script in `index.html`), styles from the site and Google Fonts, and network requests to the site or any `https:` address (the sync Worker can be anyone's). If you add an inline script, add its hash to the policy or move it into a file. Pages also set `referrer` to `same-origin`, so invite codes in a link never leak to another site.
 
 ### 2. Connect Cloudflare
 
@@ -79,7 +83,7 @@ Every token must be different. If two `TOKEN_*` secrets hold the same value the 
 
 ### 3. Connect each phone
 
-Open the app, tap **Settings**, and paste the Worker address and that person's token, then **Save and sync**. The first sync on a new device loads the saved board. The pill at the top shows **Synced**, **Syncing…**, **Offline** or **Sync problem** (tap it to retry).
+Open the app, tap **Settings**, and paste the Worker address and that person's token, then **Save and sync**. The first sync on a new device loads the saved board. The badge at the top stays hidden while sync is fine, and shows **Offline** or **Sync problem** (tap it to retry) when something needs attention.
 
 ## Invites
 
@@ -87,7 +91,7 @@ Owners listed in `ADMINS` in `worker/wrangler.toml` (now `nate`) see **Invite pe
 
 Opening the link shows **Join Now or Later sync**, with an optional name for the board and the Worker's host name. **Join** calls `POST /join`, which deletes the invite, makes a new board and a new token, and returns the token once. The app saves it like a pasted token and uploads the lists already on that device. Invites expire after 14 days (up to 30) and Settings lists open ones with **Revoke**. The note on an invite ("Mom") is only for the person inviting; it's stored with the board so `GET /boards` can say who is who.
 
-**Copy link for another device** makes `#connect=<token>&sync=<worker address>`. Opening it connects that device to the same board, the same way **Save and sync** does with a pasted token.
+**Copy link for another device** calls `POST /devices`, which returns a one-time code (`dlink:<code>`, 24 hours), and shares `#device=<code>&sync=<worker address>`. Opening it calls `POST /devices/connect {code, label}`, which deletes the code and makes a new `nd_` token just for that device (`dtok:<hash>`, with the board, the device kind and the date). The token itself never travels in a link. `GET /devices` lists a board's devices and `DELETE /devices/<id>` signs one out. A device token stops working when its board is deleted, or, for an owner board, when the `TOKEN_*` secret is removed. Older `#connect=<token>` links are still accepted, but nothing makes them any more.
 
 ## Shared lists
 
@@ -95,13 +99,24 @@ Any list except Now and Tomorrow can be shared with people on other boards of th
 
 `GET /data` returns the board with its shared lists mixed in. Each one carries `shared` (its id) and `members` (first names), and its `order` comes from that person's own placement. `PUT /data` splits the incoming board back apart by each todo's `listId`, so todos move freely between private and shared lists. When a todo moves out of a shared list, a tombstone stays in the shared list so the other members' devices drop it instead of sending it back. Name and color are shared; position on the board is per person. Checked todos go to Done on each board as usual.
 
+**People and links…** in a shared list's menu calls `GET /shared/<sid>` (members, which one is you, and open links). The person who shared it (the first member) can take someone off with `DELETE /shared/<sid>/members/<board>`, and anyone can withdraw an open link with `DELETE /shared/<sid>/invites/<code>`. A removed person's devices drop the list on their next sync instead of keeping a private copy, because the Worker ignores shared lists it no longer has for that board. A link stops working once its maker has left the list.
+
 **Leave shared list…** calls `DELETE /shared/<sid>`. The board gets tombstones for the list and its todos (so the person's other devices remove it), and the list stays for everyone else. The last member out deletes it. Deleting a board, or an older app deleting the list, also counts as leaving. Limits: 10 people per list, shared lists count toward a board's 10 lists, and `MAX_SHARED` (default 100) caps how many exist on a Worker. The nightly copies of a board include its shared lists.
 
 A shared list is a self-contained record (list, todos, members) referenced from each member's board, which maps directly onto CloudKit's shared record zones if the app moves to iCloud.
 
+### Keeping merges safe
+
+- **Old devices.** Each `PUT /data` carries `X-Synced-At`, the time of that device's previous upload. The Worker drops any list or todo it has never seen that is older than both that time and the 60-day tombstone window, and answers with a tombstone, so a phone that comes back online after months can't bring back things deleted long ago. A device that has never synced sends no header, so its lists always upload.
+- **Removed from a shared list.** Shared lists the Worker no longer has for that board are dropped from an upload, along with their todos, instead of becoming private copies.
+- **Quick add.** `POST /add` writes the todo to `inbox:<board>` (two days) before saving the board, and every `GET /data` and `PUT /data` folds the inbox in, so a todo from a Shortcut survives a device's upload landing at the same moment.
+- **Todo ids.** If a shared list carries a todo with the same id as one on the board, the board's copy wins, so the two can't overwrite each other.
+- **Colors.** List colors are checked against `#rrggbb` on the Worker and in the app; anything else becomes Pebble.
+- **Owner tokens** are compared by SHA-256 digest in constant time, and anything that isn't an owner secret or a well-formed `nt_`/`nd_` token is refused without a KV read.
+
 ### Deleting a board
 
-People who joined by invite see **Delete synced board…** in Settings. It calls `DELETE /data?confirm=delete`, which deletes `board:<id>`, every `snap:<id>:` copy and the token's `tok:` key, then leaves `gone:<hash>` (no other data) for 30 days. While that marker exists the token gets **410 Gone**, and the person's other devices turn sync off and say the board was deleted, instead of uploading it again. The app can also erase the lists on the device doing the delete.
+People who joined by invite see **Delete synced board…** in Settings. It calls `DELETE /data?confirm=delete`, which deletes `board:<id>`, every `snap:<id>:` copy, the token's `tok:` key and every device token made for the board, then leaves `gone:<hash>` (no other data) for 30 days. While that marker exists the token gets **410 Gone**, and the person's other devices turn sync off and say the board was deleted, instead of uploading it again. The app can also erase the lists on the device doing the delete.
 
 Owner boards (`TOKEN_*`) can't delete themselves, because the secret would keep working. Remove those by hand: `wrangler secret delete TOKEN_<NAME>`, then delete `board:<name>` in the KV dashboard (its snapshots expire within 30 days). An admin can delete an invited board for someone who emails in: `GET /boards` lists them, `DELETE /boards/<id>` removes one just like the person's own delete.
 
@@ -113,12 +128,17 @@ Owner boards (`TOKEN_*`) can't delete themselves, because the secret would keep 
 | `DELETE /data?confirm=delete` | invited | Delete the board, its copies and its token. |
 | `POST /add` `{ text, to }` | any | Quick add: each line of `text` becomes a todo at the bottom of Now, or of the list `to` names (`tomorrow`, `later` or a list name). For iOS Shortcuts. |
 | `GET /snapshots`, `GET /snapshots/<id>`, `POST /snapshots` | any | Nightly copies (see Backups). |
+| `POST /devices`, `GET /devices`, `DELETE /devices/<id>` | any | Make a one-time device link, list devices, sign one out. |
+| `POST /devices/connect` `{code, label}` | none | Turn a device link into a device token. |
 | `POST /join` `{code, name}` | none | Turn an invite into a board and token. |
 | `POST /invites` `{label, days}`, `GET /invites`, `DELETE /invites/<code>` | admin | Make, list and revoke invites. |
 | `GET /boards`, `DELETE /boards/<id>` | admin | List invited boards (name, note, date joined) and remove one. |
 | `POST /shared` `{listId}` | any | Share one of your lists. |
 | `POST /shared/<sid>/invites` | member | Make a one-time link to add a shared list. |
 | `POST /shared/join` `{code}` | any | Add a shared list to your board. |
+| `GET /shared/<sid>` | member | Members and open links. |
+| `DELETE /shared/<sid>/invites/<code>` | member | Withdraw an open link. |
+| `DELETE /shared/<sid>/members/<board>` | sharer | Take someone off the list. |
 | `DELETE /shared/<sid>` | member | Leave a shared list (the last one out deletes it). |
 
 Every board response carries `X-Board` (the board id the app pins itself to), `X-Board-Name`, `X-Board-Kind` (`owner` or `invited`) and, for admins, `X-Board-Admin: 1`.
@@ -127,10 +147,10 @@ Every board response carries `X-Board` (the board id the app pins itself to), `X
 
 All of this stays inside Cloudflare's free plan, with nothing to maintain:
 
-- **KV writes (1,000 a day)** are the tight one. Each sync after an edit is one write, plus one for a shared list it changed. Each board's nightly copy is one, and joining is one. Polling never writes.
+- **KV writes (1,000 a day)** are the tight one. Each sync after an edit is one write, plus one for a shared list it changed. A board's nightly copy is two (the copy and its fingerprint), and only on nights it changed or a week after its last copy. Joining is one. Polling never writes.
 - **KV reads (100,000 a day).** The 20-second refresh reads the board plus one read per shared list on it, and an invited token's lookup is cached for a minute inside the Worker, so it costs about one read per refresh, like an owner token.
 - **KV deletes and lists (1,000 a day each)** are only used by joining, deleting and the nightly backup.
-- `MAX_BOARDS` in `wrangler.toml` (50) caps invited boards so a forwarded invite can't run the account over. If a free limit is reached, Cloudflare refuses requests until the next day; it never bills a free account.
+- `MAX_BOARDS` in `wrangler.toml` (12) caps invited boards so a forwarded invite can't run the account over. If a free limit is reached, Cloudflare refuses requests until the next day; it never bills a free account.
 
 Anyone who would rather keep their lists in their own Cloudflare account can follow [docs/self-hosting.md](docs/self-hosting.md).
 
@@ -142,7 +162,7 @@ Settings → **Backups** has three buttons:
 - **Download CSV** saves the same todos as a spreadsheet (list, todo, status, dates) for Numbers or Excel. It can't be restored.
 - **Restore from file…** reads a backup file and puts every list and todo in it back the way it was. Things added since the backup are kept unless you tick **Also remove lists and todos added since this backup**. The restore syncs to the other devices like any other edit.
 
-The Worker also keeps its own copies. Every night at 09:00 UTC (the cron trigger in `wrangler.toml`) it copies each board to a KV key `snap:<name>:<time>`, which KV deletes by itself after 30 days. When sync is on, Settings lists these copies and can restore or download any of them. Before any restore, the app asks the Worker for one more copy of the board as it was, labelled "before restore", so a restore can be undone the same way. The Worker's backup endpoints use the same token as `/data`, and a token only sees its own board's copies:
+The Worker also keeps its own copies. Every night at 09:00 UTC (the cron trigger in `wrangler.toml`) it copies each board that changed since its last copy (or whose last copy is a week old) to a KV key `snap:<name>:<time>`, which KV deletes by itself after 30 days. `snaplast:<name>` remembers the last copy's fingerprint (newest edit time and counts). When sync is on, Settings lists these copies and can restore or download any of them. Before any restore, the app asks the Worker for one more copy of the board as it was, labelled "before restore", so a restore can be undone the same way. The Worker's backup endpoints use the same token as `/data`, and a token only sees its own board's copies:
 
 | Request | What it does |
 | --- | --- |
