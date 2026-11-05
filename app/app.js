@@ -6,7 +6,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.17.0";
+  const APP_VERSION = "1.18.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -15,6 +15,9 @@
   const BOARD_KEY = "nat.board.v1";
   const LOCAL_KEY = "nat.local.v1"; // per-device: lastDay, sync settings
   const SYNCED_KEY = "nat.synced.v1"; // per-device: updatedAt of each item as the Worker last had it
+  const OLD_KEY = "nat.old.v1"; // Done todos finished more than OLD_DAYS ago (see packOld)
+  const OLD_DAYS = 90;
+  const DONE_PAGE = 100; // Done rows drawn at first; "Show more" adds more
   const MAX_LISTS = 10;
   const TOMBSTONE_DAYS = 60;
   const DEFAULT_COLOR = "#a3a9b5";
@@ -23,11 +26,37 @@
   const safeColor = (c) => (typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c) ? c : DEFAULT_COLOR);
   const PALETTE = ["#f2b84b", "#7b9cff", "#9b8cf0", "#5cc6a7", "#f28b82", "#f6a6cf", "#8ecae6", "#b5d16b", "#c9a27e", "#ff9f5a", "#7fd1d8", "#a3a9b5"];
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
-  const now = () => Date.now();
+  // Every edit is stamped, and the newest stamp wins when devices disagree, so a
+  // device whose clock is off would win (or lose) edits it shouldn't. Stamps use the
+  // sync Worker's clock when there is one (clockOffset, from X-Server-Time), and each
+  // new stamp is later than any this device has seen, so an edit made after seeing
+  // another device's always wins over it.
+  let lastStamp = 0;
+  const clockNow = () => Date.now() + (Number(local.clockOffset) || 0);
+  const now = () => (lastStamp = Math.max(clockNow(), lastStamp + 1));
+  function seeStamps(b) {
+    // A stamp from a clock that's ahead (this device's own, before it knew the
+    // Worker's time, or an older app elsewhere) doesn't drag ours along with it.
+    const cap = clockNow() + 5 * 60_000;
+    for (const x of [b.settings, ...(b.lists || []), ...(b.todos || [])]) {
+      const t = (x && x.updatedAt) || 0;
+      if (t > lastStamp && t <= cap) lastStamp = t;
+    }
+  }
 
   // ---------- storage ----------
   const read = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
-  const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+  // A full device (or a browser that turned storage off) refuses to save. The edit
+  // still shows, but would be gone after a reload, so say so instead of failing quietly.
+  let storageWarned = 0, storageFailed = false;
+  const write = (k, v) => {
+    try { localStorage.setItem(k, JSON.stringify(v)); if (k === BOARD_KEY) storageFailed = false; return true; }
+    catch (e) {
+      if (k === BOARD_KEY) storageFailed = true;
+      if (Date.now() - storageWarned > 10 * 60_000) { storageWarned = Date.now(); setTimeout(() => warnStorage(k), 0); }
+      return false;
+    }
+  };
 
   let local = Object.assign({ lastDay: null, syncUrl: "", syncToken: "", pristine: false, synced: false, board: "", boardName: "", boardKind: "", admin: false, switching: false, otherBoard: "", theme: "system", keysAlt: false, sentAt: 0 }, read(LOCAL_KEY) || {});
   const looksLikeBoard = (b) => !!b && typeof b === "object" && Array.isArray(b.lists) && Array.isArray(b.todos);
@@ -54,6 +83,7 @@
   // Anything on this device that is newer hasn't reached the Worker yet. A device that
   // synced before this was tracked starts from its current board, so an upgrade
   // doesn't report every todo as unsynced.
+  seeStamps(board);
   let serverSeen = read(SYNCED_KEY);
   if (!serverSeen) { serverSeen = local.synced ? stampsOf(board) : { lists: {}, todos: {}, settings: 0 }; write(SYNCED_KEY, serverSeen); }
 
@@ -134,6 +164,71 @@
   function archive(t) {
     const l = listById(t.listId);
     touch(t, { archived: true, archivedDay: t.doneDay || todayKey(), fromName: l ? l.name : "", fromColor: l ? safeColor(l.color) : DEFAULT_COLOR });
+  }
+
+  // ---------- older Done ----------
+  // Done keeps everything, and every edit redraws the board and syncs all of it, so
+  // after a year a phone would crawl. Todos finished more than OLD_DAYS ago move off
+  // the board into their own store on this device (and, with sync, into the Worker's
+  // "old:<board>", which it fills on its own; see the Worker's isOld). They come back
+  // when someone searches Done or taps "Look further back". Todos on an archived list
+  // stay with it so "Use again" has them, and shared lists keep theirs.
+  // Keep the rule in step with isOld() in worker/worker.js.
+  function oldCutoff() { const d = dayDate(); d.setDate(d.getDate() - OLD_DAYS); return keyOf(d); }
+  function packOld() {
+    const cut = oldCutoff();
+    const keep = new Set(board.lists.filter(l => l.archived || l.shared).map(l => l.id));
+    const old = board.todos.filter(t => !t.deleted && t.archived === true && typeof t.archivedDay === "string" && t.archivedDay < cut && !keep.has(t.listId));
+    if (!old.length) return 0;
+    const ids = new Set(old.map(t => t.id));
+    const doc = oldDoc();
+    const store = new Map(doc.todos.map(t => [t.id, t]));
+    for (const t of old) { const prev = store.get(t.id); if (!prev || (t.updatedAt || 0) >= (prev.updatedAt || 0)) store.set(t.id, t); }
+    // "unsent": the Worker may never have had these (say sync was turned on after
+    // they were packed), so the next sync sends them along (see oldToSend).
+    // Only drop them from the board once they're safely stored.
+    if (!write(OLD_KEY, { todos: [...store.values()], unsent: [...new Set([...doc.unsent, ...ids])] })) return 0;
+    board.todos = board.todos.filter(t => !ids.has(t.id));
+    oldCache = null;
+    return old.length;
+  }
+  function oldDoc() { const o = read(OLD_KEY); return { todos: o && Array.isArray(o.todos) ? o.todos : [], unsent: o && Array.isArray(o.unsent) ? o.unsent : [] }; }
+  const readOld = () => oldDoc().todos;
+  function oldToSend() { const doc = oldDoc(), ids = new Set(doc.unsent); return doc.todos.filter(t => ids.has(t.id)); }
+  function oldSent(sent) {
+    if (!sent.length) return;
+    const doc = oldDoc(), done = new Set(sent.map(t => t.id));
+    write(OLD_KEY, { todos: doc.todos, unsent: doc.unsent.filter(id => !done.has(id)) });
+  }
+  function forgetOld() { write(OLD_KEY, { todos: [], unsent: [] }); oldCache = oldServer = null; }
+  // Everything older, from this device and (once asked) the Worker, newest copy of
+  // each, leaving out anything that's back on the board.
+  let oldCache = null, oldServer = null, oldLoading = null;
+  function olderDone() {
+    if (!oldCache) {
+      const m = new Map();
+      for (const t of [...readOld(), ...(oldServer || [])]) { const prev = m.get(t.id); if (!prev || (t.updatedAt || 0) > (prev.updatedAt || 0)) m.set(t.id, t); }
+      oldCache = [...m.values()];
+    }
+    const onBoard = new Set(board.todos.map(t => t.id));
+    return oldCache.filter(t => !t.deleted && t.archived && !onBoard.has(t.id)).sort((a, b) => (b.archivedDay || "").localeCompare(a.archivedDay || "") || (b.updatedAt - a.updatedAt));
+  }
+  // Asks the Worker for its older Done once per visit. Without sync, or offline,
+  // this device's own store is all there is.
+  function loadOlder() {
+    if (oldServer || oldLoading || !syncConfigured() || !local.synced || local.otherBoard || !navigator.onLine) return oldLoading || Promise.resolve();
+    oldLoading = fetch(local.syncUrl.replace(/\/+$/, "") + "/old", { headers: { "Authorization": "Bearer " + local.syncToken }, cache: "no-store" })
+      .then(r => (r.ok ? r.json() : null)).then(got => { if (got && Array.isArray(got.todos)) { oldServer = got.todos; oldCache = null; } })
+      .catch(() => {}).finally(() => { oldLoading = null; });
+    return oldLoading;
+  }
+  const mayHaveOlder = () => readOld().length > 0 || (syncConfigured() && local.synced && !oldServer) || olderDone().length > 0;
+
+  function warnStorage(k) {
+    if (k !== BOARD_KEY && k !== OLD_KEY) return;
+    toast(syncConfigured()
+      ? "This device is out of storage space, so changes may not be kept here after the app closes. They'll still sync to your other devices."
+      : "This device is out of storage space, so changes may not be kept after the app closes. Download a backup in Settings to keep them.", 10000);
   }
 
   // Archiving a list (a packing list, say) is something you choose, from its ••• menu
@@ -228,6 +323,18 @@
     return !id || id === local.board ? "your board" : "another board";
   };
   // Remembers what the Worker says about the board this token opens.
+  // The Worker's clock, measured against this device's: half the round trip is
+  // allowed for. Small differences are left alone.
+  function noteClock(res, sentAt) {
+    const server = Number(res.headers.get("X-Server-Time")), back = Date.now();
+    if (!server || back - sentAt > 10_000) return;
+    const off = Math.round(server - (sentAt + back) / 2);
+    const next = Math.abs(off) < 2000 ? 0 : off;
+    if (next !== (Number(local.clockOffset) || 0)) {
+      local.clockOffset = next; write(LOCAL_KEY, local);
+      lastStamp = 0; seeStamps(board);
+    }
+  }
   function noteBoard(res) {
     const id = res.headers.get("X-Board");
     if (!id) return;
@@ -368,14 +475,17 @@
         if (got.status === 409) throw new Error(await clashMessage(got));
         if (!got.ok) throw new Error("The Worker answered " + got.status + ".");
         const remote = await got.json();
-        if (remote.lists && remote.lists.some(l => !l.deleted)) { board = remote; rememberServer(remote); }
+        // Older Done on this device went with the lists it had, so it goes too.
+        if (remote.lists && remote.lists.some(l => !l.deleted)) { board = remote; rememberServer(remote); forgetOld(); }
       }
       const headers = { "Authorization": "Bearer " + local.syncToken, "Content-Type": "application/json" };
       if (local.board) headers["X-Expect-Board"] = local.board;
       // When this device last sent its board here (see dropRejected).
-      const prevSent = local.synced ? local.sentAt || 0 : 0, sentAt = Date.now();
+      const prevSent = local.synced ? local.sentAt || 0 : 0, sentAt = clockNow(), asked = Date.now();
       if (prevSent) headers["X-Synced-At"] = String(prevSent);
-      const res = await fetch(dataUrl(), { method: "PUT", headers, body: JSON.stringify(board) });
+      const old = oldToSend();
+      const res = await fetch(dataUrl(), { method: "PUT", headers, body: JSON.stringify(old.length ? Object.assign({}, board, { old }) : board) });
+      noteClock(res, asked);
       if (res.status === 401) throw new Error("The access token was not accepted.");
       if (res.status === 410) throw boardGone();
       if (res.status === 409) throw new Error(await clashMessage(res));
@@ -388,9 +498,12 @@
       board = mergeBoards(board, merged);
       dropRejected(merged, prevSent);
       rememberServer(merged);
+      seeStamps(merged);
+      oldSent(old);
       local.synced = true; local.sentAt = sentAt; lastPull = Date.now(); write(LOCAL_KEY, local);
       syncSucceeded();
       repairOrphans();
+      packOld();
       write(BOARD_KEY, board);
       renderWhenFree();
       hintConflicts(lost);
@@ -444,7 +557,9 @@
     syncing = true; lastPull = Date.now();
     const quit = new AbortController(), timer = force ? setTimeout(() => quit.abort(), 5000) : 0;
     try {
+      const asked = Date.now();
       const res = await fetch(dataUrl(), { headers: { "Authorization": "Bearer " + local.syncToken }, cache: "no-store", signal: quit.signal });
+      noteClock(res, asked);
       if (res.status === 401) throw new Error("The access token was not accepted.");
       if (res.status === 410) throw boardGone();
       if (res.status === 409) throw new Error(await clashMessage(res));
@@ -465,7 +580,9 @@
       const before = JSON.stringify(board);
       board = mergeBoards(board, remote);
       rememberServer(remote);
+      seeStamps(remote);
       repairOrphans();
+      packOld();
       const after = JSON.stringify(board);
       if (after !== before) { write(BOARD_KEY, board); renderWhenFree(); }
       hintConflicts(lost);
@@ -874,7 +991,8 @@
 
   // ---------- Done archive: search, filter, put back ----------
   // The search and filter live outside render() so they survive re-renders and syncs.
-  const doneView = { q: "", range: "all", list: "" };
+  // limit: how many Done rows are drawn. older: include Done from before OLD_DAYS.
+  const doneView = { q: "", range: "all", list: "", limit: DONE_PAGE, older: false };
   const RANGES = [["all", "All"], ["today", "Today"], ["week", "This week"], ["month", "This month"]];
   const fold = s => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   function rangeStart(range) {
@@ -916,7 +1034,15 @@
   }
 
   function renderArchive() {
-    const all = archived();
+    let all = [];
+    const gather = () => { all = doneView.older ? [...archived(), ...olderDone()] : archived(); };
+    gather();
+    // Searching looks through everything, older Done included.
+    const reach = () => {
+      if (doneView.older) return;
+      doneView.older = true; gather();
+      loadOlder().then(() => { if (col.isConnected) { gather(); fill(); } });
+    };
     const col = el("section", { class: "col archive" });
     const count = el("span", { class: "count" });
     col.append(el("div", { class: "col-head" },
@@ -928,21 +1054,24 @@
 
     const search = el("input", { type: "search", id: "doneSearch", class: "done-search", placeholder: "Search Done…",
       "aria-label": "Search finished todos", autocomplete: "off", spellcheck: "false", enterkeyhint: "search",
-      oninput: e => { doneView.q = e.target.value; fill(); },
-      onkeydown: e => { if (e.key === "Escape" && search.value) { e.stopPropagation(); search.value = doneView.q = ""; fill(); } } });
+      oninput: e => { doneView.q = e.target.value; doneView.limit = DONE_PAGE; if (doneView.q.trim()) reach(); fill(); },
+      onkeydown: e => { if (e.key === "Escape" && search.value) { e.stopPropagation(); search.value = doneView.q = ""; doneView.limit = DONE_PAGE; fill(); } } });
     search.value = doneView.q;
 
     const chips = el("div", { class: "done-chips", role: "group", "aria-label": "When finished" },
       RANGES.map(([v, label]) => el("button", { type: "button", class: "chip", "data-range": v, "aria-pressed": String(doneView.range === v),
-        onclick: () => { doneView.range = v; chips.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", String(c.dataset.range === v))); fill(); } }, label)));
+        onclick: () => { doneView.range = v; doneView.limit = DONE_PAGE; chips.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", String(c.dataset.range === v))); fill(); } }, label)));
 
     const names = [...new Set(all.map(a => a.fromName).filter(Boolean))].sort((a, b) => a.localeCompare(b));
     if (doneView.list && !names.includes(doneView.list)) doneView.list = "";
-    const pick = el("select", { class: "done-list", "aria-label": "From list", onchange: e => { doneView.list = e.target.value; fill(); } },
+    const pick = el("select", { class: "done-list", "aria-label": "From list", onchange: e => { doneView.list = e.target.value; doneView.limit = DONE_PAGE; fill(); } },
       el("option", { value: "" }, "Any list"), names.map(n => el("option", { value: n }, n)));
     pick.value = doneView.list;
 
-    if (all.length) col.append(el("div", { class: "done-tools" }, search, chips, el("div", { class: "done-meta" }, summary, names.length > 1 ? pick : null)));
+    const further = () => !doneView.older && doneView.range === "all" && mayHaveOlder()
+      ? el("button", { type: "button", class: "btn more-done", onclick: () => { reach(); fill(); } }, `Look further back (before ${pretty(oldCutoff(), { month: "short", day: "numeric", year: "numeric" })})`)
+      : null;
+    if (all.length || mayHaveOlder()) col.append(el("div", { class: "done-tools" }, search, chips, el("div", { class: "done-meta" }, summary, names.length > 1 ? pick : null)));
     col.append(body);
 
     function fill() {
@@ -954,16 +1083,16 @@
       summary.textContent = !filtering ? "" : when && !doneView.q.trim() ? `${n} finished ${when}` : `${n} match${n === 1 ? "" : "es"}`;
       summary.hidden = !filtering;
       body.replaceChildren();
-      if (!all.length) { const shelf = finishedShelf(); body.append(...(shelf ? [shelf] : []), el("div", { class: "empty" }, "Finished todos land here each morning.")); return; }
+      if (!all.length && !filtering) { const shelf = finishedShelf(); body.append(...(shelf ? [shelf] : []), el("div", { class: "empty" }, oldLoading ? "Looking further back…" : "Finished todos land here each morning."), further()); return; }
       if (!items.length) {
-        body.append(el("div", { class: "empty" }, doneView.q.trim() ? "Nothing in Done matches that." : "Nothing finished in this stretch yet."),
-          el("button", { type: "button", class: "btn clear-filter", onclick: () => { doneView.q = ""; doneView.range = "all"; doneView.list = ""; render(); } }, "Show everything"));
+        body.append(el("div", { class: "empty" }, oldLoading ? "Looking further back…" : doneView.q.trim() ? "Nothing in Done matches that." : "Nothing finished in this stretch yet."),
+          el("button", { type: "button", class: "btn clear-filter", onclick: () => { doneView.q = ""; doneView.range = "all"; doneView.list = ""; doneView.limit = DONE_PAGE; render(); } }, "Show everything"));
         return;
       }
       const shelf = finishedShelf();
       if (shelf) body.append(shelf);
       let last = null;
-      for (const a of items) {
+      for (const a of items.slice(0, doneView.limit)) {
         if (a.archivedDay !== last) { last = a.archivedDay; body.append(el("div", { class: "day-label" }, a.archivedDay ? pretty(a.archivedDay, { weekday: "short", month: "short", day: "numeric" }) : "Earlier")); }
         const target = restoreTarget(a);
         body.append(el("div", { class: "todo done" },
@@ -972,6 +1101,10 @@
           el("button", { type: "button", class: "put-back", title: `Put back on ${target ? target.name : "a list"}`, "aria-label": `Put “${a.text}” back on ${target ? target.name : "a list"}`, onclick: () => restore(a) },
             el("span", { "aria-hidden": "true" }, "↩"), " ", target ? target.name : "")));
       }
+      // Drawing thousands of rows on every edit is what made a full Done slow.
+      const rest = items.length - doneView.limit;
+      if (rest > 0) body.append(el("button", { type: "button", class: "btn more-done", onclick: () => { doneView.limit += DONE_PAGE * 2; fill(); } }, `Show ${Math.min(rest, DONE_PAGE * 2)} more`));
+      else body.append(...[further()].filter(Boolean));
     }
     fill();
     return col;
@@ -999,6 +1132,7 @@
   // Puts a finished todo back, unchecked, at the bottom of the list it came from.
   function restore(a) {
     const list = restoreTarget(a);
+    if (!board.todos.includes(a)) board.todos.push(a); // from older Done
     const order = Math.max(0, ...todosIn(list.id).map(t => t.order)) + 1;
     const undo = undoable([a], () => {
       touch(a, { archived: false, archivedDay: null, done: false, doneDay: null, listId: list.id, order });
@@ -1215,7 +1349,13 @@
     if (action) toastEl.append(el("button", { class: "toast-undo", type: "button", onclick: () => { clearTimeout(toastTimer); hideToast(); action.run(); } }, action.label));
     if (undoEntries) toastEl.append(el("button", { class: "toast-undo", type: "button", onclick: () => { clearTimeout(toastTimer); undo(); } }, "Undo"));
     toastEl.hidden = false;
-    // Showing it again puts it above a dialog that opened after it.
+    // Showing it again puts it above a dialog that opened after it. An open modal
+    // dialog makes everything outside it inert, so the toast moves into that dialog
+    // (it stays in the top layer, so it still sits at the bottom of the screen);
+    // otherwise its Undo couldn't be tapped while Settings is open.
+    const isModal = (d) => { try { return d.matches(":modal"); } catch (e) { return true; } };
+    const host = [...document.querySelectorAll("dialog[open]")].reverse().find(isModal) || document.body;
+    if (toastEl.parentElement !== host) host.append(toastEl);
     if (toastOnTop) try { toastEl.hidePopover(); toastEl.showPopover(); } catch (e) {}
     armToast();
   }
@@ -1827,14 +1967,18 @@
     };
     const rows = [["List", "Todo", "Status", "Checked on", "Moved to Done on"]];
     for (const l of lists()) for (const t of todosIn(l.id)) rows.push([l.name, t.text, t.done ? "Checked" : "Open", t.doneDay || "", ""]);
-    for (const t of archived()) rows.push([t.fromName || "", t.text, "Done", t.doneDay || "", t.archivedDay || ""]);
+    for (const t of [...archived(), ...olderDone()]) rows.push([t.fromName || "", t.text, "Done", t.doneDay || "", t.archivedDay || ""]);
     return "﻿" + rows.map(r => r.map(cell).join(",")).join("\r\n") + "\r\n";
   }
 
+  // Backups include older Done, from this device and the Worker.
   document.getElementById("exportJson").addEventListener("click", async () => {
-    if (await saveFile(`now-or-later-${stampName()}.json`, backupJson(), "application/json")) backupMsg("Backup saved.");
+    await loadOlder();
+    const all = Object.assign({}, board, { todos: [...board.todos, ...olderDone()] });
+    if (await saveFile(`now-or-later-${stampName()}.json`, backupJson(all), "application/json")) backupMsg("Backup saved.");
   });
   document.getElementById("exportCsv").addEventListener("click", async () => {
+    await loadOlder();
     if (await saveFile(`now-or-later-${stampName()}.csv`, boardCsv(), "text/csv")) backupMsg("CSV saved.");
   });
 
@@ -1892,14 +2036,19 @@
     if (!pendingRestore) return;
     const bk = pendingRestore, replace = document.getElementById("restoreReplace").checked;
     closeRestore();
-    // Ask the Worker to keep a copy of the board as it is now, so a restore can itself be undone.
-    if (syncConfigured() && local.synced && !local.otherBoard && navigator.onLine) {
+    // Ask the Worker to keep a copy of the board as it is now, so a restore can itself
+    // be undone later. If it can't, say so before going ahead.
+    if (syncConfigured() && local.synced && !local.otherBoard) {
       backupMsg("Saving a copy of your lists first…");
-      try { await snapFetch("?reason=before%20restore", { method: "POST" }); } catch (e) {}
+      let saved = false;
+      try { await snapFetch("?reason=before%20restore", { method: "POST" }); saved = true; } catch (e) {}
+      if (!saved && !confirm("I couldn't save a copy of your lists on the sync service first, so this restore can only be undone right after it, on this device. Restore anyway?")) { backupMsg("Nothing was restored."); return; }
     }
+    // This device's own copy, for the Undo on the toast.
+    const before = JSON.parse(JSON.stringify({ settings: board.settings, lists: board.lists, todos: board.todos }));
     restoreBoard(bk, replace);
     backupMsg(syncConfigured() ? "Restored. Your other devices will pick it up on their next sync." : "Restored.");
-    toast("Backup restored");
+    toast("Backup restored", 10000, { label: "Undo", run: () => { restoreBoard(before, true); toast("Restore undone"); } });
     loadSnapshots();
   });
 
@@ -1992,7 +2141,8 @@
       try {
         if (local.lastDay !== todayKey() && syncConfigured() && local.synced && !local.otherBoard && navigator.onLine) await pull(true);
       } catch (e) {}
-      if (rollover()) commit(); else if (!isBusyEditing()) render();
+      const packed = packOld();
+      if (rollover() || packed) commit(); else if (!isBusyEditing()) render();
     })().finally(() => { dayChecking = null; });
     return dayChecking;
   }
@@ -2258,6 +2408,7 @@
   // ---------- boot ----------
   applyTheme();
   repairOrphans();
+  packOld();
   write(BOARD_KEY, board);
   idleStatus();
   render();

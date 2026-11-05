@@ -497,3 +497,62 @@ test("the nightly copy skips boards that haven't changed", async () => {
   await new Promise(r => setTimeout(r, 5));
   await run(); assert.equal(snaps(), 2, "changed: copied");
 });
+
+test("Done todos older than 90 days move to old, and come back from GET /old", async () => {
+  const e = env();
+  const day = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+  const lists = [{ id: "n", name: "Now", role: "now", order: 1, updatedAt: 1 }, { id: "p", name: "Packing", order: 2, archived: true, archivedDay: day(200), updatedAt: 1 }];
+  const done = (id, d, listId = "n") => ({ id, listId, text: id, done: true, doneDay: d, archived: true, archivedDay: d, updatedAt: Date.parse(d) });
+  let r = await call(e, "PUT", "/data", { token: NATE, body: { lists, todos: [done("recent", day(10)), done("ancient", day(120)), done("packed", day(200), "p"), { id: "open", listId: "n", text: "open", updatedAt: 1 }] } });
+  let b = await r.json();
+  assert.deepEqual(b.todos.map(t => t.id).sort(), ["open", "packed", "recent"], "old Done leaves the board; an archived list keeps its todos");
+  r = await call(e, "GET", "/old", { token: NATE });
+  assert.deepEqual((await r.json()).todos.map(t => t.id), ["ancient"]);
+
+  // An older app on a device that has synced before still sends it. It goes to old,
+  // and doesn't come back as a tombstone.
+  r = await call(e, "PUT", "/data", { token: NATE, body: { lists, todos: [done("ancient", day(120))] }, headers: { "X-Synced-At": String(Date.now() - 1000) } });
+  b = await r.json();
+  assert.ok(!b.todos.some(t => t.id === "ancient"), "not on the board, not even as a tombstone");
+  assert.equal((await (await call(e, "GET", "/old", { token: NATE })).json()).todos.length, 1);
+
+  // Put back from a search: newer and not in Done, so it's back on the board.
+  r = await call(e, "PUT", "/data", { token: NATE, body: { lists, todos: [{ id: "ancient", listId: "n", text: "ancient", done: false, archived: false, updatedAt: Date.now() }] }, headers: { "X-Synced-At": String(Date.now() - 1000) } });
+  assert.ok((await r.json()).todos.some(t => t.id === "ancient" && !t.archived));
+
+  // Deleting the board deletes old too.
+  const { deleteBoard } = await import("../worker.js");
+  await deleteBoard(e, "nate");
+  assert.ok(!e.NOW_AND_THEN.m.has("old:nate"));
+});
+
+test("a clock far ahead can't stamp edits into the future, and responses carry the server time", async () => {
+  const e = env();
+  const ahead = Date.now() + 30 * 864e5;
+  const r = await call(e, "PUT", "/data", { token: NATE, body: { lists: [{ id: "n", name: "Now", updatedAt: ahead }], todos: [{ id: "t", listId: "n", text: "x", updatedAt: ahead }] } });
+  const b = await r.json();
+  assert.ok(b.lists[0].updatedAt <= Date.now() && b.todos[0].updatedAt <= Date.now());
+  assert.ok(Math.abs(Number(r.headers.get("X-Server-Time")) - Date.now()) < 5000);
+  assert.match(r.headers.get("Access-Control-Expose-Headers"), /X-Server-Time/);
+});
+
+test("manual snapshots of an unchanged board reuse the last one for a few minutes", async () => {
+  const e = env();
+  await call(e, "PUT", "/data", { token: NATE, body: board("milk") });
+  const a = await (await call(e, "POST", "/snapshots", { token: NATE })).json();
+  const b = await (await call(e, "POST", "/snapshots", { token: NATE })).json();
+  assert.equal(b.id, a.id); assert.equal(b.reused, true);
+  await call(e, "PUT", "/data", { token: NATE, body: { lists: [], todos: [{ id: "t2", listId: "l1", text: "eggs", updatedAt: Date.now() }] } });
+  await new Promise(r => setTimeout(r, 5)); // a new id, to the millisecond
+  const c = await (await call(e, "POST", "/snapshots", { token: NATE })).json();
+  assert.notEqual(c.id, a.id, "a changed board gets a fresh copy, so a restore can be undone");
+});
+
+test("older Done a device packed before it synced arrives in the PUT's old array", async () => {
+  const e = env();
+  const d = new Date(Date.now() - 200 * 864e5).toISOString().slice(0, 10);
+  const r = await call(e, "PUT", "/data", { token: NATE, body: { lists: [{ id: "n", name: "Now", updatedAt: 1 }], todos: [],
+    old: [{ id: "o1", listId: "n", text: "long ago", done: true, archived: true, archivedDay: d, updatedAt: 5 }, { id: "x", deleted: true, updatedAt: 5 }] } });
+  assert.equal((await r.json()).todos.length, 0);
+  assert.deepEqual((await (await call(e, "GET", "/old", { token: NATE })).json()).todos.map(t => t.id), ["o1"]);
+});
