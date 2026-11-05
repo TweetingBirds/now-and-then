@@ -9,7 +9,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.22.0";
+  const APP_VERSION = "1.23.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -605,8 +605,10 @@
   }
   // Synced changes that arrive mid-edit wait for the edit to end, then show.
   let viewStale = false;
+  // An open list or todo menu counts as busy too: redrawing the board closes it,
+  // so a sync arriving a moment after it opened would make it vanish.
   function renderWhenFree() {
-    if (busyForPull()) viewStale = true; else { viewStale = false; render(); }
+    if (busyForPull() || openPop) viewStale = true; else { viewStale = false; render(); }
   }
   document.addEventListener("focusout", () => setTimeout(() => { if (viewStale) renderWhenFree(); }, 0));
   document.addEventListener("pointerup", () => setTimeout(() => { if (viewStale) renderWhenFree(); }, 0));
@@ -636,6 +638,7 @@
     openPop.remove(); openPop = null; popTrigger = null;
     document.querySelectorAll('[aria-expanded="true"]').forEach(b => b.setAttribute("aria-expanded", "false"));
     if (back && back.isConnected) back.focus();
+    if (viewStale) setTimeout(() => { if (viewStale) renderWhenFree(); }, 0);
   }
   document.addEventListener("pointerdown", e => { if (openPop && !openPop.contains(e.target) && !e.target.closest("[data-pop-trigger]")) closePop(); });
   document.addEventListener("keydown", e => { if (e.key === "Escape") closePop(true); });
@@ -852,7 +855,6 @@
       el("button", { class: "item", disabled: idx === ls.length - 1, onclick: () => swapLists(list, ls[idx + 1]) }, "Move list right"),
       !list.role ? el("button", { class: "item", onclick: () => askArchive(list) }, "Archive list…") : null,
       canShare ? el("button", { class: "item", onclick: () => { closePop(); shareList(list); } }, "Share list…") : null,
-      list.shared ? el("button", { class: "item", onclick: () => { closePop(); shareList(list); } }, "Invite someone…") : null,
       list.shared ? el("button", { class: "item", onclick: () => { closePop(); manageShared(list); } }, "People and links…") : null,
       list.shared ? el("button", { class: "item danger", onclick: () => { leaveBox.hidden = false; } }, "Leave shared list…") : null,
       !list.shared && fallback ? el("button", { class: "item danger", onclick: () => { confirmBox.hidden = false; } }, "Delete list…") : null,
@@ -1000,9 +1002,25 @@
     return text.then(t => navigator.clipboard.writeText(t)).then(() => true, () => false);
   }
 
-  // Makes the list shared if it isn't yet, then a one-time link for someone else.
-  // The link is copied right away, and People and links opens with it and what to
-  // do next, so the instructions don't vanish with a toast.
+  // Sharing has one place: People and links. "Share list…" on a list that isn't
+  // shared yet opens it and makes the first link, and a shared list's menu opens it
+  // with "People and links…". It shows who's on the list and every link nobody has
+  // used yet, each with Copy (or Share… on a phone) and Withdraw, plus New link.
+  // Everything happens inside it, so nothing flashes up in a toast and goes away.
+  const peopleDlg = document.getElementById("peopleDlg");
+  const LINK_LAG_MS = 90 * 1000; // how long KV's list can miss a link just made
+  // pv: what the box shows. Links made or withdrawn on this device are remembered
+  // per shared list (made, gone) for a while, because the Worker's list of links can
+  // lag behind for up to a minute, even after the box is closed and opened again.
+  let pv = null;
+  const recentLinks = new Map(); // sid -> { made: Map(code -> link), gone: Set(code) }
+  const linksFor = (sid) => {
+    if (!recentLinks.has(sid)) recentLinks.set(sid, { made: new Map(), gone: new Set() });
+    return recentLinks.get(sid);
+  };
+  const canSendSheet = () => !!navigator.share && matchMedia("(pointer: coarse)").matches;
+  const shareUrl = (code) => appLink({ share: code, sync: workerBase() });
+
   async function shareList(list) {
     if (!canUseShared()) {
       if (peopleDlg.open) peopleDlg.close();
@@ -1010,112 +1028,183 @@
       toast("Sharing a list needs sync. Turn it on here first.", 5000);
       return;
     }
-    if (!navigator.onLine) { toast("You're offline. Sharing needs a connection.", 4000); return; }
+    if (!navigator.onLine) { peopleSay("You're offline. Sharing needs a connection.", true); if (!peopleDlg.open) toast("You're offline. Sharing needs a connection.", 4000); return; }
+    // Safari only lets a page copy during the tap, so the copy starts now and the
+    // link follows once the sync service has made it.
     let give, fail;
     const linkText = new Promise((res, rej) => { give = res; fail = rej; });
     const copied = copySoon(linkText);
-    toast(list.shared ? "Making a link…" : `Sharing ${list.name}…`, 8000);
+    let sid = list.shared;
+    openPeople(list, sid);
+    pv.making = true; drawPeople();
     try {
-      let sid = list.shared;
       if (!sid) {
+        peopleSay(`Sharing ${list.name}…`);
         // The Worker moves the list as it has it, so send any edits here first.
         const first = await sync();
         if (first !== true) throw new Error(first);
         sid = (await sharedFetch("", { method: "POST", body: JSON.stringify({ listId: list.id }) })).sid;
+        pv.sid = sid; Object.assign(pv, linksFor(sid));
         await sync();
       }
       const inv = await sharedFetch("/" + encodeURIComponent(sid) + "/invites", { method: "POST" });
-      const link = appLink({ share: inv.code, sync: workerBase() });
-      give(link);
-      hideToast();
-      manageShared(listById(list.id) || list, { code: inv.code, link, expires: inv.expires, copied }, sid);
+      give(shareUrl(inv.code));
+      if (!pv || pv.listId !== list.id) return;
+      pv.made.set(inv.code, { code: inv.code, expires: inv.expires, mine: true, at: Date.now() });
+      pv.fresh = inv.code; pv.copied = ""; pv.making = false;
+      peopleSay("");
+      drawPeople();
+      copied.then(ok => { if (pv && pv.fresh === inv.code) { pv.copied = ok ? inv.code : ""; drawPeople(); } });
+      await loadPeople();
     } catch (e) {
       fail(e);
+      if (pv && pv.listId === list.id) { pv.making = false; drawPeople(); }
       const msg = e.code === "full" ? "This sync service has as many shared lists as it allows." :
         e.code === "can't share this list" ? "Now and Tomorrow can't be shared, because each morning moves todos between them. Make a new list to share." :
         e instanceof TypeError ? "Couldn't reach the sync service." : e.message;
-      toast("Couldn't share: " + msg, 7000);
+      peopleSay((sid ? "Couldn't make a link: " : "Couldn't share: ") + msg, true);
+      if (pv && !pv.info && !sid) { pv.failed = true; drawPeople(); }
     }
   }
 
-  // People and links: the place to manage a shared list. A link just made (`fresh`)
-  // sits at the top with what to do with it and a Copy link button. Below are who's
-  // on the list, a button for another link, and the links nobody has used yet (any
-  // of them can be withdrawn). The list's owner can also take someone off it.
-  const peopleDlg = document.getElementById("peopleDlg");
-  async function manageShared(list, fresh = null, sid = list.shared) {
+  function manageShared(list) {
     if (!canUseShared()) { openSettingsTo("sync"); return; }
-    const title = document.getElementById("peopleTitle"), body = document.getElementById("peopleBody"), msg = document.getElementById("peopleMsg");
-    title.textContent = list.name;
-    msg.textContent = ""; msg.className = "msg";
-    const freshBox = fresh ? newLinkBox(list.name, fresh) : null;
-    body.replaceChildren(...[freshBox, el("p", {}, "Loading…")].filter(Boolean));
-    if (!peopleDlg.open) peopleDlg.showModal();
-    if (freshBox) freshBox.querySelector(".copy-link").focus();
-    async function load() {
-      let info;
-      try { info = await sharedFetch("/" + encodeURIComponent(sid)); }
-      catch (e) { body.replaceChildren(...[freshBox, el("p", {}, e instanceof TypeError ? "Couldn't reach the sync service." : e.message)].filter(Boolean)); return; }
-      const keepFresh = freshBox && info.invites.some(i => i.code === fresh.code) ? freshBox : null;
-      const people = el("ul", { class: "invite-list" }, info.members.map(m => el("li", {},
-        el("span", {}, m.board === info.me ? `${m.name} (you)` : m.name),
-        info.owner && m.board !== info.me ? el("button", { class: "btn danger", type: "button", onclick: async (ev) => {
-          ev.currentTarget.disabled = true;
-          try { await sharedFetch("/" + encodeURIComponent(sid) + "/members/" + encodeURIComponent(m.board), { method: "DELETE" }); msg.textContent = `${m.name} is off ${info.name}. The list leaves their board on their next sync.`; await sync(); load(); }
-          catch (e) { msg.className = "msg bad"; msg.textContent = "Couldn't remove them: " + e.message; }
-        } }, "Remove") : null)));
-      const links = info.invites.length
-        ? el("ul", { class: "invite-list" }, info.invites.map(i => el("li", {},
-            el("span", {}, `${fresh && i.code === fresh.code ? "Your new link" : i.mine ? "Your link" : `${i.byName || "Someone"}'s link`} · works until ${shortDate(i.expires)}`),
-            el("button", { class: "btn", type: "button", onclick: async (ev) => {
-              ev.currentTarget.disabled = true;
-              try { await sharedFetch("/" + encodeURIComponent(sid) + "/invites/" + encodeURIComponent(i.code), { method: "DELETE" }); msg.className = "msg"; msg.textContent = "Link withdrawn. It won't work anymore."; load(); }
-              catch (e) { msg.className = "msg bad"; msg.textContent = "Couldn't withdraw it: " + e.message; }
-            } }, "Withdraw"))))
-        : el("p", {}, "No open links. Each link works for one person, so make one for each person you invite.");
-      const live = listById(list.id) || list;
-      body.replaceChildren(...[
-        keepFresh,
-        el("h3", {}, "People"), people,
-        info.owner ? null : el("p", { class: "note" }, `${info.members[0].name} has been on it longest, so they can take people off it.`),
-        el("div", { class: "row start" }, el("button", { class: "btn", type: "button", onclick: () => shareList({ ...live, shared: sid }) }, keepFresh ? "Invite someone else" : "Invite someone")),
-        el("h3", {}, "Links not used yet"), links].filter(Boolean));
-    }
-    load();
+    openPeople(list, list.shared);
+    drawPeople();
+    loadPeople();
   }
 
-  // The box for a link just made: what to do with it, the link itself, and Copy
-  // link (it's already copied; the button says so and copies it again if tapped).
-  function newLinkBox(name, fresh) {
-    const copyBtn = el("button", { class: "btn primary copy-link", type: "button" }, "Copy link");
-    let timer;
-    const showCopied = () => {
-      copyBtn.textContent = "✓ Copied";
-      clearTimeout(timer);
-      timer = setTimeout(() => { copyBtn.textContent = "Copy link"; }, 4000);
-    };
-    const field = el("input", { type: "text", readonly: true, value: fresh.link, "aria-label": "Invite link", onfocus: e => e.target.select() });
-    const what = el("p", {});
-    const say = (copied) => {
-      what.textContent = (copied ? "The link is copied. " : "") +
-        `Paste it into a text or email to the person you're sharing ${name} with. When they open it and tap Add list, ${name} shows up on their board, and you'll both see each other's changes.`;
-    };
-    say(false);
+  function openPeople(list, sid) {
+    if (!pv || pv.listId !== list.id || !peopleDlg.open) {
+      pv = { listId: list.id, name: list.name, sid, info: null, fresh: "", copied: "", making: false, failed: false,
+        ...(sid ? linksFor(sid) : { made: new Map(), gone: new Set() }) };
+      peopleSay("");
+    }
+    document.getElementById("peopleTitle").textContent = list.name;
+    if (!peopleDlg.open) peopleDlg.showModal();
+  }
+  peopleDlg.addEventListener("close", () => { pv = null; });
+
+  function peopleSay(text, bad) {
+    const msg = document.getElementById("peopleMsg");
+    msg.className = bad ? "msg bad" : "msg"; msg.textContent = text;
+  }
+
+  async function loadPeople() {
+    const me = pv;
+    if (!me || !me.sid) return;
+    try {
+      const also = [...me.made.values()].filter(i => Date.now() - i.at < LINK_LAG_MS).map(i => i.code);
+      const info = await sharedFetch("/" + encodeURIComponent(me.sid) + (also.length ? "?also=" + also.join(",") : ""));
+      if (pv !== me) return;
+      me.info = info;
+      document.getElementById("peopleTitle").textContent = me.name = info.name;
+      drawPeople();
+    } catch (e) {
+      if (pv !== me) return;
+      peopleSay(e instanceof TypeError ? "Couldn't reach the sync service." : e.message, true);
+      if (!me.info) drawPeople();
+    }
+  }
+
+  // The links to show: what the Worker says is open (it also checks the ones just
+  // made here, see loadPeople), or until it has answered, the one just made. Ones
+  // withdrawn here stay out even if the Worker's answer was already on its way.
+  // The one just made comes first, then the newest.
+  function openLinks() {
+    const shown = [...(pv.info ? pv.info.invites : [])];
+    const just = pv.made.get(pv.fresh);
+    if (just && !shown.some(i => i.code === just.code)) shown.push(just);
+    return shown.filter(i => !pv.gone.has(i.code))
+      .sort((a, b) => (b.code === pv.fresh) - (a.code === pv.fresh) || String(b.expires).localeCompare(String(a.expires)));
+  }
+
+  function drawPeople() {
+    if (!pv) return;
+    const body = document.getElementById("peopleBody"), info = pv.info, name = pv.name;
+    const keepFocus = document.activeElement && body.contains(document.activeElement) ? document.activeElement.dataset.key : "";
+    const parts = [];
+    if (!info && !pv.made.size) {
+      parts.push(el("p", {}, pv.failed ? "" : pv.making ? `Making a link to share ${name}…` : "Loading…"));
+      body.replaceChildren(...parts);
+      return;
+    }
+    if (pv.fresh && openLinks().some(i => i.code === pv.fresh)) {
+      parts.push(el("p", { class: "new-link-what" },
+        (pv.copied === pv.fresh ? "Your new link is copied. " : "") +
+        `Paste it into a text or email to the person you're sharing ${name} with. When they open it and tap Add list, ${name} shows up on their board, and you'll both see each other's changes.`));
+    }
+    if (info) {
+      parts.push(el("h3", {}, "People"), el("ul", { class: "invite-list" }, info.members.map(m => el("li", {},
+        el("span", {}, m.board === info.me ? `${m.name} (you)` : m.name),
+        info.owner && m.board !== info.me ? el("button", { class: "btn danger", type: "button", "data-key": "rm-" + m.board, onclick: (ev) => removePerson(ev, m) }, "Remove") : null))));
+      if (!info.owner) parts.push(el("p", { class: "note" }, `${info.members[0].name} has been on it longest, so they can take people off it.`));
+    }
+    const links = openLinks();
+    parts.push(el("h3", {}, "Invite links"),
+      el("p", { class: "note" }, "Each link adds one person and works for 14 days. Make one for each person you invite."));
+    if (links.length) parts.push(el("ul", { class: "invite-list" }, links.map(linkRow)));
+    parts.push(el("div", { class: "row start" }, el("button", { class: "btn" + (links.length ? "" : " primary"), type: "button", "data-key": "new", disabled: pv.making,
+      onclick: () => shareList({ ...(listById(pv.listId) || { id: pv.listId, name }), shared: pv.sid }) }, pv.making ? "Making a link…" : links.length ? "Make another link" : "Make a link")));
+    body.replaceChildren(...parts);
+    if (keepFocus) body.querySelector(`[data-key="${CSS.escape(keepFocus)}"]`)?.focus();
+  }
+
+  function linkRow(i) {
+    const fresh = i.code === pv.fresh, url = shareUrl(i.code);
+    const who = fresh ? "Just made" : i.mine ? "Your link" : `${i.byName || "Someone"}'s link`;
+    const copyBtn = el("button", { class: "btn" + (fresh ? " primary" : ""), type: "button", "data-key": "copy-" + i.code }, pv.copied === i.code ? "✓ Copied" : canSendSheet() ? "Share…" : "Copy");
+    const field = el("input", { type: "text", readonly: true, value: url, "aria-label": "Invite link", hidden: true, onfocus: e => e.target.select() });
     copyBtn.addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(fresh.link); showCopied(); say(true); }
-      catch (e) { field.focus(); field.select(); what.textContent = "Couldn't copy it here. The link is selected below, so copy it from there."; }
+      if (canSendSheet()) {
+        try { await navigator.share({ title: `Join my ${pv.name} list`, url }); return; } catch (e) { if (e.name === "AbortError") return; }
+      }
+      try {
+        await navigator.clipboard.writeText(url);
+        pv.copied = i.code; drawPeople();
+        setTimeout(() => { if (pv && pv.copied === i.code) { pv.copied = ""; drawPeople(); } }, 4000);
+      } catch (e) {
+        field.hidden = false; field.focus(); field.select();
+        peopleSay("Couldn't copy it here. The link is selected, so copy it from there.", true);
+      }
     });
-    fresh.copied.then(ok => { if (ok && copyBtn.isConnected) { showCopied(); say(true); } });
-    const canShare = navigator.share && matchMedia("(pointer: coarse)").matches;
-    return el("div", { class: "new-link", role: "group", "aria-label": "Your new invite link" },
-      what,
-      field,
-      el("div", { class: "row split" },
-        el("span", { class: "note" }, `Works once, until ${shortDate(fresh.expires)}.`),
-        el("span", { class: "row" },
-          canShare ? el("button", { class: "btn", type: "button", onclick: () => navigator.share({ title: `Join my ${name} list`, url: fresh.link }).catch(() => {}) }, "Share…") : null,
-          copyBtn)),
-    );
+    const withdraw = el("button", { class: "btn", type: "button", "data-key": "wd-" + i.code, onclick: () => withdrawLink(i) }, "Withdraw");
+    return el("li", { class: fresh ? "fresh" : "" },
+      el("span", {}, `${who} · until ${shortDate(i.expires)}`),
+      el("span", { class: "row" }, copyBtn, withdraw),
+      field);
+  }
+
+  // The link goes from the box right away; if the sync service says no, it comes back.
+  async function withdrawLink(i) {
+    const me = pv;
+    me.gone.add(i.code);
+    if (me.fresh === i.code) me.fresh = "";
+    peopleSay("Link withdrawn. It won't work anymore.");
+    drawPeople();
+    try { await sharedFetch("/" + encodeURIComponent(me.sid) + "/invites/" + encodeURIComponent(i.code), { method: "DELETE" }); }
+    catch (e) {
+      if (e.status !== 404) {
+        me.gone.delete(i.code);
+        if (pv === me) { peopleSay("Couldn't withdraw it: " + (e instanceof TypeError ? "the sync service can't be reached." : e.message), true); drawPeople(); }
+        return;
+      }
+      if (pv === me) peopleSay("That link was already used or withdrawn.");
+    }
+    if (pv === me) loadPeople();
+  }
+
+  async function removePerson(ev, m) {
+    const me = pv;
+    ev.currentTarget.disabled = true;
+    try {
+      await sharedFetch("/" + encodeURIComponent(me.sid) + "/members/" + encodeURIComponent(m.board), { method: "DELETE" });
+      if (pv === me) peopleSay(`${m.name} is off ${me.name}. The list leaves their board on their next sync.`);
+      await sync();
+      if (pv === me) loadPeople();
+    } catch (e) {
+      if (pv === me) { peopleSay("Couldn't remove them: " + (e instanceof TypeError ? "the sync service can't be reached." : e.message), true); drawPeople(); }
+    }
   }
 
   async function leaveList(list) {
@@ -1829,10 +1918,10 @@
       const result = await sync();
       if (result !== true) throw new Error(result);
       pendingLink = null;
-      msg.textContent = res.already ? `${res.name} is already on your board.` : `Added ${res.name}${res.by ? `, shared by ${res.by}` : ""}.`;
+      msg.textContent = res.already ? `${res.name} is already on your board.` : `Added ${res.name}${res.by ? `, shared by ${res.by}` : ""}. Changes either of you make show up for both.`;
       render();
       const l = board.lists.find(x => x.shared === res.sid);
-      setTimeout(() => { joinDlg.close(); if (l) document.getElementById("name-" + l.id)?.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" }); }, 1200);
+      joinDone(() => { if (l) document.getElementById("name-" + l.id)?.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" }); });
     } catch (e) {
       go.disabled = false;
       msg.className = "msg bad";
@@ -1842,7 +1931,28 @@
         e.code === "list full" ? "This list already has as many people as it can." : e.message;
     }
   }
+  // Once it worked, the box stays up with what happened and a Done button, instead
+  // of closing itself a moment later.
+  let afterJoin = null;
+  function joinDone(then = null) {
+    afterJoin = then || (() => {});
+    // What happened replaces what it was going to do.
+    const msg = document.getElementById("joinMsg");
+    document.getElementById("joinWhat").textContent = msg.textContent;
+    msg.textContent = ""; document.getElementById("joinHost").textContent = "";
+    document.getElementById("joinNameRow").hidden = true;
+    const go = document.getElementById("joinGo");
+    go.textContent = "Done"; go.disabled = false; go.hidden = false;
+    document.getElementById("joinNo").hidden = true;
+    go.focus();
+  }
+  joinDlg.addEventListener("close", () => {
+    document.getElementById("joinNo").hidden = false;
+    const then = afterJoin; afterJoin = null;
+    if (then) then();
+  });
   document.getElementById("joinGo").addEventListener("click", async () => {
+    if (afterJoin) { joinDlg.close(); return; }
     const link = pendingLink; if (!link) return;
     if (link.share) return addSharedList(link, document.getElementById("joinMsg"), document.getElementById("joinGo"));
     const msg = document.getElementById("joinMsg"), go = document.getElementById("joinGo");
@@ -1876,7 +1986,7 @@
       pendingLink = null;
       msg.textContent = `Connected to ${boardLabel(local.board)}.`;
       render(); showSyncMore();
-      setTimeout(() => joinDlg.close(), 1200);
+      joinDone();
     } catch (e) {
       go.disabled = false;
       msg.className = "msg bad"; msg.textContent = e instanceof TypeError ? "Couldn't reach the sync service. Check the connection and try again." : e.message;

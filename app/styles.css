@@ -633,9 +633,11 @@ body:has(dialog.welcome[open]) { overflow: hidden; }
 .settings .msg.device-msg.bad { color: var(--waiting-ink); }
 .settings .people { display: flex; flex-direction: column; gap: 10px; }
 .settings .people h3 { margin-top: 6px; }
-.settings .new-link { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in oklab, var(--accent) 7%, var(--surface)); }
-.settings .new-link p { color: var(--ink); }
-.settings .new-link input { font-size: .85rem; color: var(--muted); }
+.settings .people .new-link-what { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in oklab, var(--accent) 7%, var(--surface)); color: var(--ink); }
+.settings .people .invite-list li { flex-wrap: wrap; }
+.settings .people .invite-list li.fresh > span:first-child { font-weight: 600; }
+.settings .people .invite-list li .row { gap: 6px; flex-wrap: nowrap; }
+.settings .people .invite-list li input { flex: 1 0 100%; font-size: .85rem; color: var(--muted); }
 .settings .row.split { justify-content: space-between; align-items: center; }
 dialog.settings.confirm { width: min(380px, calc(100vw - 32px)); }
 dialog.settings.confirm .settings-head { padding: 14px 20px; }

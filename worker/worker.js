@@ -606,9 +606,20 @@ async function sharedApi(request, env, who, url) {
   // Who's on it and which links are still open. The owner (whoever has been on it
   // longest) can take people off it.
   if (m === "GET" && !sub) {
-    const invites = (await listKeys(env, "sinv:"))
-      .filter((k) => k.metadata && k.metadata.sid === sid)
-      .map((k) => ({ code: k.name.slice(5), byName: k.metadata.byName || "", mine: k.metadata.by === who.board, expires: k.metadata.expires }));
+    // KV's list can lag behind a delete by up to a minute, so a link that was just
+    // withdrawn or used would still show. Reading each key directly sees the delete.
+    // It can also miss one made a moment ago, so the app names links it just made
+    // (?also=code,code) and those are looked up directly too.
+    const listed = (await listKeys(env, "sinv:")).filter((k) => k.metadata && k.metadata.sid === sid);
+    const still = await Promise.all(listed.map((k) => env.NOW_AND_THEN.get(k.name)));
+    const found = listed.filter((k, i) => still[i] !== null).map((k) => ({ code: k.name.slice(5), meta: k.metadata }));
+    const also = [...new Set((url.searchParams.get("also") || "").split(","))]
+      .filter((c) => INVITE_CODE.test(c) && !found.some((f) => f.code === c)).slice(0, 20);
+    for (const c of also) {
+      const got = await env.NOW_AND_THEN.getWithMetadata("sinv:" + c);
+      if (got.value !== null && got.metadata && got.metadata.sid === sid) found.push({ code: c, meta: got.metadata });
+    }
+    const invites = found.map(({ code, meta }) => ({ code, byName: meta.byName || "", mine: meta.by === who.board, expires: meta.expires }));
     return json({
       name: doc.list.name, owner: doc.members[0].board === who.board, me: who.board,
       members: doc.members.map((x) => ({ board: x.board, name: x.name || "Someone", joined: x.joined })),
