@@ -482,3 +482,83 @@ html, body { overflow: hidden; overscroll-behavior: none; touch-action: pan-x pa
 @media (pointer: coarse) {
   input, select, textarea, .text[contenteditable="true"] { font-size: 16px !important; }
 }
+
+/* ---------- Welcome: first visit only ---------- */
+dialog.welcome {
+  border: 1px solid var(--line); border-radius: 18px; background: var(--surface); color: var(--ink);
+  width: min(480px, calc(100vw - 32px)); padding: 0; box-shadow: var(--shadow);
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  overflow: hidden;
+}
+dialog.welcome[open] { display: flex; flex-direction: column; }
+dialog.welcome::backdrop { background: color-mix(in oklab, var(--bg) 82%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+body:has(dialog.welcome[open]) { overflow: hidden; }
+.welcome form { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.welcome-top { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 10px 10px 0 22px; }
+.welcome-dots { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.welcome-dots li { width: 7px; height: 7px; border-radius: 50%; background: var(--rule); transition: width .2s, background .2s; }
+.welcome-dots li.on { width: 20px; border-radius: 4px; background: var(--accent); }
+.welcome-skip { border: 0; background: transparent; color: var(--muted); font-size: .9rem; min-height: 44px; padding: 0 12px; border-radius: 10px; }
+.welcome-skip:hover { color: var(--ink); background: color-mix(in oklab, var(--ink) 6%, transparent); }
+.welcome-step {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 16px; padding: 8px 22px 6px;
+}
+.welcome-step[hidden] { display: none; }
+.welcome-step h2 { font-family: var(--font-display); font-weight: 800; font-size: 1.5rem; letter-spacing: -.02em; margin: 6px 0 0; }
+.welcome-step h2.welcome-mark { font-size: 2.3rem; letter-spacing: -.03em; margin-top: 10px; line-height: 1.05; }
+.welcome-mark .hand { font-family: var(--font-hand); font-weight: 400; font-size: .82em; letter-spacing: 0; margin: 0 .06em; color: var(--accent); }
+.welcome-tag { margin: -10px 0 0; font-family: var(--font-hand); font-size: 1.25rem; color: var(--muted); }
+.welcome-lede { margin: 0; font-size: 1rem; line-height: 1.5; }
+.welcome-note { margin: 0; font-size: .85rem; color: var(--muted); }
+.welcome-step a { color: var(--accent); }
+
+/* Three little ruled pages, like the board itself. */
+.welcome-pages { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.welcome-pages .mini {
+  display: flex; flex-direction: column; min-width: 0; min-height: 112px; border-radius: 10px; overflow: hidden;
+  background: color-mix(in oklab, var(--c) 22%, var(--surface)); border: 1px solid color-mix(in oklab, var(--c) 45%, var(--surface));
+  padding: 0 0 8px;
+}
+.welcome-pages .mini b {
+  font-family: var(--font-display); font-weight: 700; font-size: .78rem; padding: 7px 9px 5px;
+  display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.welcome-pages .mini b::before { content: ""; flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--c); }
+.welcome-pages .mini i {
+  font-style: normal; font-family: var(--font-hand); font-size: .78rem; line-height: 1.25;
+  margin: 0 6px; padding: 5px 4px 3px 8px; background: var(--surface);
+  border-bottom: 1px solid var(--rule); box-shadow: inset 2px 0 0 color-mix(in oklab, var(--margin) 55%, transparent);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.welcome-pages .mini i:first-of-type { border-radius: 6px 6px 0 0; }
+.welcome-pages .mini i.done { text-decoration: line-through; color: var(--muted); }
+
+.welcome-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.welcome-list li { display: flex; gap: 12px; align-items: flex-start; line-height: 1.45; font-size: .95rem; }
+.welcome-list li[hidden] { display: none; }
+.welcome-list strong { display: block; }
+.welcome-list .dot { flex: none; width: 12px; height: 12px; margin-top: 5px; border-radius: 50%; background: var(--c); }
+.welcome .row { display: flex; flex-wrap: wrap; gap: 8px; }
+.welcome-nav {
+  flex: none; display: flex; gap: 8px; justify-content: flex-end;
+  padding: 14px 22px max(18px, env(safe-area-inset-bottom, 0px));
+}
+.welcome-nav .btn { min-height: 44px; padding: 8px 18px; font-size: .95rem; }
+.welcome-nav .btn.primary { min-width: 8em; justify-content: center; }
+.welcome-nav #welcomeBack { margin-right: auto; }
+.welcome-nav #welcomeBack[hidden] { display: none; }
+
+/* On a phone the welcome fills the screen. */
+@media (max-width: 520px) {
+  dialog.welcome {
+    width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border: 0; border-radius: 0;
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .welcome-step h2.welcome-mark { font-size: 2.6rem; margin-top: 4vh; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .welcome-step:not([hidden]) { animation: welcome-in .22s ease-out; }
+  @keyframes welcome-in { from { opacity: 0; transform: translateX(10px); } }
+}

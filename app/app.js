@@ -6,7 +6,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.12.0";
+  const APP_VERSION = "1.13.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -27,7 +27,9 @@
 
   let local = Object.assign({ lastDay: null, syncUrl: "", syncToken: "", pristine: false, synced: false, board: "", boardName: "", boardKind: "", admin: false, switching: false, otherBoard: "", theme: "system", haptics: true }, read(LOCAL_KEY) || {});
   let board = read(BOARD_KEY);
-  if (!board) { board = starterBoard(); local.pristine = true; write(LOCAL_KEY, local); }
+  // A device with no lists yet is a first visit: it gets the welcome (see showWelcome).
+  // Devices that already had lists never have welcome set, so they never see it.
+  if (!board) { board = starterBoard(); local.pristine = true; local.welcome = "pending"; write(LOCAL_KEY, local); }
   // What the Worker last confirmed it has, as { lists: {id: updatedAt}, todos: {...}, settings }.
   // Anything on this device that is newer hasn't reached the Worker yet. A device that
   // synced before this was tracked starts from its current board, so an upgrade
@@ -1466,7 +1468,7 @@
     const k = e.key;
     if ((e.metaKey || e.ctrlKey) && k === ",") { e.preventDefault(); openSettingsDlg(); return; }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if (dlg.open || keysDlg.open) return; // dialogs close themselves on Esc
+    if (document.querySelector("dialog[open]")) return; // dialogs close themselves on Esc
     const a = document.activeElement;
     if (isTyping(a)) {
       if (k === "Escape" && a.id && a.id.startsWith("add-")) { a.value = ""; a.blur(); }
@@ -1897,6 +1899,92 @@
     return true;
   }
 
+  // ---------- welcome (first visit) ----------
+  // Three short steps: what the lists are for, how a day works, and where lists live.
+  // Shown once, to a device that had no lists when it opened the app. An invite, device
+  // or shared-list link goes first, and the welcome follows when that dialog closes.
+  // Settings > About > Welcome tour shows it again.
+  const welcomeDlg = document.getElementById("welcome");
+  const welcomeSteps = [...welcomeDlg.querySelectorAll(".welcome-step")];
+  const welcomeDots = [...welcomeDlg.querySelectorAll(".welcome-dots li")];
+  const welcomeNext = document.getElementById("welcomeNext"), welcomeBack = document.getElementById("welcomeBack");
+  let welcomeAt = 0;
+  function welcomeGo(i) {
+    welcomeAt = Math.max(0, Math.min(welcomeSteps.length - 1, i));
+    welcomeSteps.forEach((s, n) => { s.hidden = n !== welcomeAt; });
+    welcomeDots.forEach((d, n) => d.classList.toggle("on", n === welcomeAt));
+    welcomeBack.hidden = welcomeAt === 0;
+    const last = welcomeAt === welcomeSteps.length - 1;
+    welcomeNext.textContent = last ? "Start writing" : "Next";
+    welcomeSteps[welcomeAt].scrollTop = 0;
+  }
+  function installHint() {
+    if (matchMedia("(display-mode: standalone)").matches || navigator.standalone) return "";
+    const ua = navigator.userAgent;
+    if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return "In Safari, tap the Share button, then Add to Home Screen.";
+    if (/Android/.test(ua)) return "In Chrome, tap the ⋮ menu, then Add to Home screen.";
+    if (/Macintosh/.test(ua) && /Safari/.test(ua) && !/Chrome|Chromium|Edg|Firefox/.test(ua)) return "In Safari, choose File, then Add to Dock.";
+    if (/Chrome|Chromium|Edg/.test(ua)) return "Use the install button in the address bar to give it its own window.";
+    return "";
+  }
+  function showWelcome() {
+    const hint = installHint();
+    document.getElementById("welcomeInstall").hidden = !hint;
+    document.getElementById("welcomeInstallHow").textContent = hint;
+    // Someone who just joined from a link is already syncing: say so instead of explaining links.
+    const synced = syncConfigured() && local.synced;
+    const linkItem = welcomeDlg.querySelector('[data-step="3"] .welcome-list li:nth-child(2) > span:last-child');
+    const strong = document.createElement("strong");
+    strong.textContent = synced ? "You're syncing." : "Got an invite or device link?";
+    linkItem.replaceChildren(strong, synced
+      ? `Your lists are saved to ${boardLabel(local.board)} and show up on your other devices. Settings → Sync has a link for adding another one.`
+      : "Open it on this device and sync sets itself up, so your lists show up everywhere you use Now or Later.");
+    document.getElementById("welcomeSync").hidden = synced;
+    welcomeGo(0);
+    if (!welcomeDlg.open) welcomeDlg.showModal();
+    // With a mouse or keyboard, Return moves on. On touch, skip it so no focus ring shows.
+    if (matchMedia("(hover: hover)").matches) welcomeNext.focus(); else document.activeElement?.blur();
+  }
+  function finishWelcome() {
+    if (local.welcome !== "done") { local.welcome = "done"; write(LOCAL_KEY, local); }
+    if (welcomeDlg.open) welcomeDlg.close();
+  }
+  welcomeNext.addEventListener("click", () => {
+    if (welcomeAt < welcomeSteps.length - 1) { welcomeGo(welcomeAt + 1); return; }
+    finishWelcome();
+    // Start them where they'll write: the Now list's add box (not on touch, where the keyboard would pop up).
+    if (matchMedia("(hover: hover)").matches) document.querySelector(".add input")?.focus();
+  });
+  welcomeBack.addEventListener("click", () => { welcomeGo(welcomeAt - 1); (welcomeBack.hidden ? welcomeNext : welcomeBack).focus(); });
+  welcomeDlg.addEventListener("close", () => { if (local.welcome !== "done") { local.welcome = "done"; write(LOCAL_KEY, local); } });
+  welcomeDlg.addEventListener("keydown", e => {
+    if (e.target.closest("a, input")) return;
+    if (e.key === "ArrowRight") { e.preventDefault(); if (welcomeAt < welcomeSteps.length - 1) welcomeGo(welcomeAt + 1); }
+    if (e.key === "ArrowLeft") { e.preventDefault(); welcomeGo(welcomeAt - 1); }
+  });
+  // Swipe between steps on touch screens.
+  let swipeX = null, swipeY = 0;
+  welcomeDlg.addEventListener("touchstart", e => { if (e.touches.length === 1) { swipeX = e.touches[0].clientX; swipeY = e.touches[0].clientY; } }, { passive: true });
+  welcomeDlg.addEventListener("touchend", e => {
+    if (swipeX == null) return;
+    const dx = e.changedTouches[0].clientX - swipeX, dy = e.changedTouches[0].clientY - swipeY; swipeX = null;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (dx < 0 && welcomeAt < welcomeSteps.length - 1) welcomeGo(welcomeAt + 1);
+    else if (dx > 0) welcomeGo(welcomeAt - 1);
+  });
+  document.getElementById("welcomeRestore").addEventListener("click", () => {
+    finishWelcome(); openSettingsTo("backups"); document.getElementById("importJson").click();
+  });
+  document.getElementById("welcomeSync").addEventListener("click", () => { finishWelcome(); openSettingsTo("sync"); });
+  document.getElementById("showWelcome").addEventListener("click", () => { dlg.close(); showWelcome(); });
+  // After an invite or device link's dialog closes (joined or not), a first visit still gets its welcome.
+  joinDlg.addEventListener("close", () => { if (local.welcome === "pending") setTimeout(showWelcome, 250); });
+  function maybeWelcome() {
+    if (local.welcome !== "pending" || atOldAddress) return;
+    if (document.querySelector("dialog[open]")) return; // a link's dialog is up; its close shows the welcome
+    showWelcome();
+  }
+
   // ---------- no zoom ----------
   // iOS ignores user-scalable=no, so stop Safari's pinch gestures here. Two-finger
   // touchmoves are pinches too; one-finger scrolling and drags are untouched.
@@ -1920,7 +2008,7 @@
   render();
   sync();
   checkForUpdate();
-  readMove().then((moving) => { if (!moving) { readLink(); offerMove(); } });
+  readMove().then((moving) => { if (!moving) { readLink(); offerMove(); maybeWelcome(); } });
 
   // exposed for tests
   window.__nat = { mergeBoards, restoreBoard, readBackup, boardCsv, backupJson, movePayload, get board() { return board; } };
