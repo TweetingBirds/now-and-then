@@ -6,9 +6,10 @@ cd "$(dirname "$0")/.."
 echo "Syntax check"
 for f in app/*.js worker/*.js; do node --check "$f"; done
 node --input-type=module --check < worker/worker.js
+node --input-type=module --check < app/core.js
 
-echo "Worker tests"
-(cd worker && node --test test/worker.test.mjs)
+echo "Tests (the shared rules in app/core.js, and the Worker)"
+(cd worker && node --test test/core.test.mjs test/worker.test.mjs)
 
 echo "Version matches What's New"
 version="$(sed -n 's/.*const APP_VERSION = "\([^"]*\)".*/\1/p' app/app.js)"

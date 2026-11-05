@@ -3,10 +3,13 @@
 // small Cloudflare Worker that merges changes todo by todo (see /worker).
 (() => {
   "use strict";
+  // The rules shared with the sync Worker (merging, older Done, quick add, the
+  // morning carry-over) live in core.js, loaded just before this file.
+  const core = globalThis.NatCore;
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.19.0";
+  const APP_VERSION = "1.20.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -16,15 +19,17 @@
   const LOCAL_KEY = "nat.local.v1"; // per-device: lastDay, sync settings
   const SYNCED_KEY = "nat.synced.v1"; // per-device: updatedAt of each item as the Worker last had it
   const OLD_KEY = "nat.old.v1"; // Done todos finished more than OLD_DAYS ago (see packOld)
-  const OLD_DAYS = 90;
+  const OLD_DAYS = core.OLD_DAYS;
   const DONE_PAGE = 100; // Done rows drawn at first; "Show more" adds more
   const MAX_LISTS = 10;
-  const TOMBSTONE_DAYS = 60;
+  const TOMBSTONE_DAYS = core.TOMBSTONE_DAYS;
   const DEFAULT_COLOR = "#a3a9b5";
   // Colors go into style attributes, so only "#rrggbb" is used. Anything else (say from
   // someone on a shared list) becomes the plain gray. The Worker checks this too.
   const safeColor = (c) => (typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c) ? c : DEFAULT_COLOR);
   const PALETTE = ["#f2b84b", "#7b9cff", "#9b8cf0", "#5cc6a7", "#f28b82", "#f6a6cf", "#8ecae6", "#b5d16b", "#c9a27e", "#ff9f5a", "#7fd1d8", "#a3a9b5"];
+  // What a screen reader says for each swatch.
+  const COLOR_NAMES = ["Marigold", "Blue", "Lavender", "Mint", "Coral", "Pink", "Sky", "Lime", "Tan", "Orange", "Teal", "Gray"];
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
   // Every edit is stamped, and the newest stamp wins when devices disagree, so a
   // device whose clock is off would win (or lose) edits it shouldn't. Stamps use the
@@ -108,34 +113,14 @@
     };
   }
 
-  // Same merge the Worker runs: newest edit wins per list, per todo, and for settings.
-  // Unlike the Worker, it keeps a's objects (this device's board) and copies the winning
-  // fields into them. The rendered rows and an in-progress drag hold references to those
-  // objects, so replacing them would make the next drop or edit change a copy that is no
-  // longer on the board, and the todo would snap back.
-  function mergeBoards(a, b) {
-    const cutoff = now() - TOMBSTONE_DAYS * 864e5;
-    const mergeById = (x = [], y = []) => {
-      const m = new Map();
-      for (const item of x) m.set(item.id, item);
-      for (const item of y) {
-        const prev = m.get(item.id);
-        if (!prev) m.set(item.id, item);
-        else if (prev !== item && (item.updatedAt || 0) >= (prev.updatedAt || 0)) {
-          for (const k of Object.keys(prev)) if (!(k in item)) delete prev[k];
-          Object.assign(prev, item);
-        }
-      }
-      return [...m.values()].filter(i => !(i.deleted && (i.updatedAt || 0) < cutoff));
-    };
-    const sa = a.settings || {}, sb = b.settings || {};
-    return {
-      version: 1,
-      settings: (sb.updatedAt || 0) >= (sa.updatedAt || 0) ? sb : sa,
-      lists: mergeById(a.lists, b.lists),
-      todos: mergeById(a.todos, b.todos),
-    };
-  }
+  // Same merge the Worker runs (core.mergeBoards): newest edit wins per list, per
+  // todo, and for settings. Unlike the Worker, it keeps a's objects (this device's
+  // board) and copies the winning fields into them. The rendered rows and an
+  // in-progress drag hold references to those objects, so replacing them would make
+  // the next drop or edit change a copy that is no longer on the board, and the todo
+  // would snap back.
+  const takeFields = (prev, item) => { for (const k of Object.keys(prev)) if (!(k in item)) delete prev[k]; Object.assign(prev, item); };
+  const mergeBoards = (a, b) => core.mergeBoards(a, b, { now: clockNow(), assign: takeFields });
 
   // ---------- helpers over the board ----------
   // Archived lists stay in board.lists with archived: true (see archiveList).
@@ -173,12 +158,12 @@
   // "old:<board>", which it fills on its own; see the Worker's isOld). They come back
   // when someone searches Done or taps "Look further back". Todos on an archived list
   // stay with it so "Use again" has them, and shared lists keep theirs.
-  // Keep the rule in step with isOld() in worker/worker.js.
-  function oldCutoff() { const d = dayDate(); d.setDate(d.getDate() - OLD_DAYS); return keyOf(d); }
+  // The rule itself is core.isOld, which the Worker uses too.
+  const oldCutoff = () => core.oldCutoff(new Date(clockNow()));
   function packOld() {
     const cut = oldCutoff();
     const keep = new Set(board.lists.filter(l => l.archived || l.shared).map(l => l.id));
-    const old = board.todos.filter(t => !t.deleted && t.archived === true && typeof t.archivedDay === "string" && t.archivedDay < cut && !keep.has(t.listId));
+    const old = board.todos.filter(t => core.isOld(t, cut, keep));
     if (!old.length) return 0;
     const ids = new Set(old.map(t => t.id));
     const doc = oldDoc();
@@ -268,8 +253,7 @@
         // was put in Tomorrow today (on another device, which already did its
         // morning), so it stays there.
         const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
-        let o = Math.max(0, ...todosIn(nowL.id).map(t => t.order));
-        todosIn(tomL.id).filter(t => (t.updatedAt || 0) < midnight.getTime()).forEach(t => touch(t, { listId: nowL.id, order: ++o }));
+        for (const { todo, order } of core.carryOver(board.todos, nowL.id, tomL.id, midnight.getTime() + (Number(local.clockOffset) || 0))) touch(todo, { listId: nowL.id, order });
       }
     }
     local.lastDay = today; write(LOCAL_KEY, local);
@@ -644,14 +628,17 @@
     return n;
   };
 
-  let openPop = null;
-  function closePop() {
+  let openPop = null, popTrigger = null;
+  // With `refocus`, focus goes back to the button that opened the menu (Esc, Tab).
+  function closePop(refocus) {
     if (!openPop) return;
-    openPop.remove(); openPop = null;
+    const back = refocus && openPop.contains(document.activeElement) ? popTrigger : null;
+    openPop.remove(); openPop = null; popTrigger = null;
     document.querySelectorAll('[aria-expanded="true"]').forEach(b => b.setAttribute("aria-expanded", "false"));
+    if (back && back.isConnected) back.focus();
   }
   document.addEventListener("pointerdown", e => { if (openPop && !openPop.contains(e.target) && !e.target.closest("[data-pop-trigger]")) closePop(); });
-  document.addEventListener("keydown", e => { if (e.key === "Escape") closePop(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closePop(true); });
   // Menus float above everything (so the last todo's menu isn't hidden under the add row), so close them if what they point at scrolls away.
   document.addEventListener("scroll", e => { if (openPop && !openPop.contains(e.target)) closePop(); }, true);
   window.addEventListener("resize", () => closePop());
@@ -661,6 +648,9 @@
     const scroll = boardEl.scrollLeft;
     const focusedId = document.activeElement?.id;
     const rowFocused = !!document.activeElement?.matches?.(".todo[data-id]");
+    // A choice from a menu (Move to, a color) redraws the board: focus goes back
+    // to the menu's button rather than to the top of the page.
+    const fromMenu = openPop && openPop.contains(document.activeElement) && popTrigger ? popTrigger.id : "";
     closePop();
     document.getElementById("today").textContent = pretty(todayKey());
     const ls = lists();
@@ -673,7 +663,8 @@
     boardEl.append(renderArchive());
     boardEl.scrollLeft = scroll;
     renderTabs(ls);
-    if (focusedId && (focusedId.startsWith("add-") || focusedId === "doneSearch")) document.getElementById(focusedId)?.focus();
+    if (fromMenu && document.getElementById(fromMenu)) document.getElementById(fromMenu).focus({ preventScroll: true });
+    else if (focusedId && (focusedId.startsWith("add-") || focusedId === "doneSearch")) document.getElementById(focusedId)?.focus();
     else if (kbSel && (rowFocused || document.activeElement === document.body)) focusTodo(kbSel);
   }
 
@@ -713,18 +704,20 @@
   function renderList(list) {
     const todos = todosIn(list.id);
     const open = todos.filter(t => !t.done).length;
-    const col = el("section", { class: "col" + (list.shared ? " shared" : ""), "data-list": list.id, style: `--c:${safeColor(list.color)}` });
+    const col = el("section", { class: "col" + (list.shared ? " shared" : ""), "data-list": list.id, style: `--c:${safeColor(list.color)}`, "aria-labelledby": "h-" + list.id });
     const head = el("div", { class: "col-head" });
+    // The name is an input you can edit, so screen readers get a plain heading too.
     head.append(...[
-      el("button", { class: "swatch-btn", title: "Change color", "aria-label": `Change ${list.name} color`, "data-pop-trigger": true, onclick: e => colorPop(e, list, head) }),
+      el("h2", { class: "sr-only", id: "h-" + list.id }, `${list.name}, ${open} to do`),
+      el("button", { class: "swatch-btn", id: "color-" + list.id, title: "Change color", "aria-label": `Change ${list.name} color`, "data-pop-trigger": true, onclick: e => colorPop(e, list, head) }),
       el("input", {
         class: "col-title", value: list.name, "aria-label": "List name", maxlength: 30, id: "name-" + list.id,
         onchange: e => { const v = e.target.value.trim(); if (v && v !== list.name) { touch(list, { name: v }); commit(); } else e.target.value = list.name; },
         onkeydown: e => { if (e.key === "Enter") e.target.blur(); },
       }),
       list.shared ? el("button", { class: "shared-mark", type: "button", title: sharedWith(list), "aria-label": sharedWith(list), "data-pop-trigger": true, onclick: e => listPop(e, list, head) }, PEOPLE()) : null,
-      el("span", { class: "count", title: "Unfinished" }, String(open)),
-      el("button", { class: "icon-btn", title: "List options", "aria-label": `${list.name} options`, "data-pop-trigger": true, onclick: e => listPop(e, list, head) }, "•••"),
+      el("span", { class: "count", title: "Unfinished", "aria-hidden": "true" }, String(open)),
+      el("button", { class: "icon-btn", id: "opts-" + list.id, title: "List options", "aria-label": `${list.name} options`, "aria-haspopup": "menu", "data-pop-trigger": true, onclick: e => listPop(e, list, head) }, "•••"),
     ].filter(Boolean));
     const body = el("div", { class: "col-body", "data-drop": list.id });
     if (!todos.length) body.append(el("div", { class: "empty" }, list.role === "later" ? "Someday things go here." : "Nothing here yet."));
@@ -747,9 +740,10 @@
     const row = el("div", { class: "todo" + (t.done ? " done" : "") + (unsyncedIds.has(t.id) ? " unsynced" : ""), "data-id": t.id });
     const text = el("div", { class: "text", ondblclick: () => editText(text, t) }, t.text);
     row.append(
-      el("button", { class: "grip", "aria-label": "Drag to move", title: "Drag to move", onpointerdown: e => startDrag(e, t, row) }, "⋮⋮"),
+      // Dragging needs a pointer; keyboards and screen readers move todos from the ••• menu.
+      el("button", { class: "grip", title: "Drag to move", tabindex: "-1", "aria-hidden": "true", onpointerdown: e => startDrag(e, t, row) }, "⋮⋮"),
       // The label around the box is the 44-point tap target; the box stays small.
-      el("label", { class: "check-hit" }, el("input", { type: "checkbox", class: "check", checked: t.done, "aria-label": "Done", onchange: e => {
+      el("label", { class: "check-hit" }, el("input", { type: "checkbox", class: "check", checked: t.done, "aria-label": t.text, onchange: e => {
         const checked = e.target.checked;
         const list = listById(t.listId);
         const undo = undoable([t], () => {
@@ -765,7 +759,7 @@
       } })),
       text,
       el("span", { class: "unsynced-dot", title: "Not synced yet", "aria-label": "Not synced yet" }),
-      el("button", { class: "icon-btn more", "aria-label": "Todo options", "aria-expanded": "false", "data-pop-trigger": true, onclick: e => todoPop(e, t, row, text) }, "•••"),
+      el("button", { class: "icon-btn more", id: "more-" + t.id, "aria-label": `Options for “${t.text}”`, "aria-haspopup": "menu", "aria-expanded": "false", "data-pop-trigger": true, onclick: e => todoPop(e, t, row, text) }, "•••"),
     );
     return row;
   }
@@ -785,11 +779,24 @@
   // They open below the trigger, or above it when there isn't room below.
   function popAt(anchor, trigger, ...kids) {
     closePop();
-    openPop = el("div", { class: "pop", role: "menu" }, ...kids);
+    openPop = el("div", { class: "pop", role: "menu", "aria-label": trigger.getAttribute("aria-label") || "Menu", onkeydown: popKeys }, ...kids);
+    openPop.querySelectorAll("button").forEach(b => { if (!b.getAttribute("role")) b.setAttribute("role", "menuitem"); });
     document.body.append(openPop);
+    popTrigger = trigger;
     trigger.setAttribute("aria-expanded", "true");
     placePop(anchor, trigger, "right");
+    // Focus moves into the menu, so a keyboard or screen reader lands on its first choice.
+    popItems()[0]?.focus({ preventScroll: true });
     return openPop;
+  }
+  const popItems = () => openPop ? [...openPop.querySelectorAll("button:not([disabled]), input, select")] : [];
+  // Up and Down (and Home, End) move through the menu; Tab leaves it and closes it.
+  function popKeys(e) {
+    const items = popItems(), i = items.indexOf(document.activeElement);
+    const go = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: items.length - 1 }[e.key];
+    if (go != null && items.length && e.target.tagName !== "INPUT") {
+      e.preventDefault(); items[(go + items.length) % items.length].focus();
+    } else if (e.key === "Tab") { e.preventDefault(); closePop(true); }
   }
   function placePop(anchor, trigger, align) {
     const pop = openPop, gap = 4, pad = 8;
@@ -821,8 +828,8 @@
     const apply = c => { touch(list, { color: c }); commit(); };
     popAt(head, e.currentTarget,
       el("div", { class: "lbl" }, "Page color"),
-      el("div", { class: "swatches" }, PALETTE.map(c => el("button", {
-        style: `background:${c}`, "aria-label": "Color " + c, "aria-pressed": String(c === list.color), onclick: () => apply(c),
+      el("div", { class: "swatches" }, PALETTE.map((c, i) => el("button", {
+        style: `background:${c}`, "aria-label": COLOR_NAMES[i], role: "menuitemradio", "aria-checked": String(c === list.color), onclick: () => apply(c),
       }))),
       el("label", { class: "custom-color" },
         el("input", { type: "color", value: safeColor(list.color), oninput: ev => preview(ev.target.value), onchange: ev => apply(ev.target.value) }),
@@ -1083,11 +1090,12 @@
       doneView.older = true; gather();
       loadOlder().then(() => { if (col.isConnected) { gather(); fill(); } });
     };
-    const col = el("section", { class: "col archive" });
+    const col = el("section", { class: "col archive", "aria-labelledby": "h-done" });
     const count = el("span", { class: "count" });
     col.append(el("div", { class: "col-head" },
+      el("h2", { class: "sr-only", id: "h-done" }, "Done"),
       el("span", { class: "swatch-btn", "aria-hidden": "true" }),
-      el("div", { class: "col-title" }, "Done"),
+      el("div", { class: "col-title", "aria-hidden": "true" }, "Done"),
       count));
     const body = el("div", { class: "col-body" });
     const summary = el("div", { class: "done-summary", role: "status" });
@@ -1400,7 +1408,10 @@
     armToast();
   }
   toastEl.addEventListener("pointerenter", () => clearTimeout(toastTimer));
-  toastEl.addEventListener("pointerleave", () => { if (!toastEl.hidden) armToast(); });
+  toastEl.addEventListener("pointerleave", () => { if (!toastEl.hidden && !toastEl.contains(document.activeElement)) armToast(); });
+  // It waits while a keyboard or screen reader is on its buttons, too.
+  toastEl.addEventListener("focusin", () => clearTimeout(toastTimer));
+  toastEl.addEventListener("focusout", e => { if (!toastEl.hidden && !toastEl.contains(e.relatedTarget)) armToast(); });
 
   // ---------- settings ----------
   const dlg = document.getElementById("settings");
@@ -2307,12 +2318,7 @@
   //   &to=<list>            another list instead, by role (tomorrow, later) or by name.
   //   ?title=&text=&url=    what the share sheet sends (share_target in the manifest).
   // The address is cleaned up right after, so reloading doesn't add it twice.
-  const QUICK_MAX = 50, QUICK_LEN = 500;
-  function quickTarget(to) {
-    const ls = lists(), want = (to || "").trim().toLowerCase();
-    return (want && (ls.find(l => l.role === want) || ls.find(l => l.name.trim().toLowerCase() === want)))
-      || ls.find(l => l.role === "now") || ls[0];
-  }
+  const quickTarget = (to) => core.quickTarget(lists(), to);
   function quickLines(p) {
     let text = p.get("add") || "";
     if (!text) {
@@ -2322,7 +2328,7 @@
       text = body || title;
       if (url && !text.includes(url)) text = text ? text + " " + url : url;
     }
-    return text.split(/\r?\n/).map(x => x.trim().replace(/^[-*•]\s+/, "").slice(0, QUICK_LEN)).filter(Boolean).slice(0, QUICK_MAX);
+    return core.quickLines(text);
   }
   function quickAdd() {
     const p = new URLSearchParams(location.search);

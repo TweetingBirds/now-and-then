@@ -3,7 +3,7 @@ name: Deploy sync Worker to Cloudflare
 on:
   push:
     branches: [main]
-    paths: ["worker/**", ".github/workflows/worker.yml"]
+    paths: ["worker/**", "app/core.js", ".github/workflows/worker.yml"]
   workflow_dispatch:
 
 jobs:
@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Test the Worker
         working-directory: worker
-        run: node --test test/worker.test.mjs
+        run: npm test
       - uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

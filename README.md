@@ -24,12 +24,13 @@ It's a progressive web app: open it in Safari or Chrome and choose **Add to Home
 | --- | --- |
 | `app/` | The web app: plain HTML, CSS and JavaScript, no build step. Deployed to GitHub Pages. |
 | `app/whats-new.html`, `support.html`, `privacy.html`, `terms.html` | Info pages. Each stands on its own (`pages.css`, `pages.js`), so the Support and Privacy URLs can also go on an App Store listing. Add a card to What's New whenever `APP_VERSION` is bumped. |
+| `app/core.js` | The rules the app and the Worker must agree on: merging two copies of a board (newest stamp wins; on a tie a live copy beats a deleted one, otherwise the copy that arrived later wins), which Done todos are older, where a quick add lands, and what the morning moves from Tomorrow to Now. An ES module with no dependencies: the app loads it as `window.NatCore`, the Worker imports it (wrangler bundles it), and `worker/test/core.test.mjs` tests it. |
 | `app/sw.js` | Service worker for offline use. Its cache name is stamped with the build on each deploy. It waits 3 seconds for the network before falling back to the saved copy, and keeps fonts in their own cache (`nat-fonts-v1`) across deploys. |
-| `worker/` | Cloudflare Worker that stores each person's board in Workers KV. Tests: `npm test` in `worker/` (they also run before every deploy). |
+| `worker/` | Cloudflare Worker that stores each person's board in Workers KV. Tests: `npm test` in `worker/` runs the shared-rule tests and the Worker tests (they also run before every deploy, and a change to `app/core.js` redeploys the Worker). |
 | `docs/self-hosting.md` | How anyone can run their own sync Worker on Cloudflare's free plan. Linked from Support. |
-| `scripts/check.sh` | Fast checks: `node --check` on every script, the Worker tests, and that `APP_VERSION` matches the *Latest* card on What's New. Runs on every pull request (`.github/workflows/checks.yml`) and before each Pages deploy. |
+| `scripts/check.sh` | Fast checks: `node --check` on every script, the tests, and that `APP_VERSION` matches the *Latest* card on What's New. Runs on every pull request (`.github/workflows/checks.yml`) and before each Pages deploy. |
 | `.github/workflows/pages.yml` | Deploys `app/` to GitHub Pages on every push to `main`, stamping the build number, commit and date into the app and writing `version.json`. |
-| `.github/workflows/worker.yml` | Deploys the Worker to Cloudflare on pushes that change `worker/`. |
+| `.github/workflows/worker.yml` | Deploys the Worker to Cloudflare on pushes that change `worker/` or `app/core.js`. |
 
 Data lives in the browser's local storage first. When sync is set up, the app sends its whole board to the Worker after each change and whenever it's reopened. The Worker merges it with the stored board (the newest edit wins for each list, each todo and the settings) and sends the result back, so a phone and an iPad can both be used without overwriting each other. While the app is on screen it also checks for changes from other devices every 20 seconds, and right away when its tab or window comes back into focus, so a board left open on a computer keeps up with edits made on a phone. These checks only read the board (no KV writes), pause while the tab is hidden, and wait while you're typing or dragging.
 
