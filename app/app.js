@@ -6,7 +6,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.14.0";
+  const APP_VERSION = "1.15.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -1781,6 +1781,28 @@
     }
     document.getElementById("versionInfo").textContent = text;
   }
+  // Send feedback: a plain email with the version and device filled in, so a
+  // bug report says which build it's about without anyone digging through Settings.
+  function deviceName() {
+    const ua = navigator.userAgent;
+    if (/iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return "iPad";
+    if (/iPhone|iPod/.test(ua)) return "iPhone";
+    if (/Android/.test(ua)) return "Android";
+    if (/Macintosh/.test(ua)) return "Mac";
+    if (/Windows/.test(ua)) return "Windows";
+    if (/CrOS/.test(ua)) return "Chromebook";
+    if (/Linux/.test(ua)) return "Linux";
+    return "Unknown device";
+  }
+  function feedbackLink() {
+    const build = STAMPED ? `Build ${BUILD_NUMBER} (${BUILD_SHA})` : "Local build";
+    const installed = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+    const subject = `Now or Later feedback (${APP_VERSION}${STAMPED ? `, build ${BUILD_NUMBER}` : ""})`;
+    const body = `\n\n\n---\nVersion ${APP_VERSION} · ${build}\nDevice: ${deviceName()}, ${installed ? "installed app" : "in the browser"}\n`;
+    document.getElementById("feedbackLink").href =
+      `mailto:hello@tweetingbirds.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  }
+  feedbackLink();
   // version.json is written at deploy time. If the live build differs from the
   // one running here, offer a reload so the page shows what's actually deployed.
   let liveBuild = null;
