@@ -1,6 +1,6 @@
 # Run your own sync Worker
 
-Now and Then keeps your lists on your device. Sync copies them to a small program, a Cloudflare Worker, so your phone, tablet and computer show the same board. You can use the Worker run by Tweeting Birds (by invite), or run your own in your own free Cloudflare account. Then your lists are stored only in your account.
+Now or Later keeps your lists on your device. Sync copies them to a small program, a Cloudflare Worker, so your phone, tablet and computer show the same board. You can use the Worker run by Tweeting Birds (by invite), or run your own in your own free Cloudflare account. Then your lists are stored only in your account.
 
 This takes about fifteen minutes. You need a computer with [Node.js](https://nodejs.org) 20 or later, and a free [Cloudflare account](https://dash.cloudflare.com/sign-up).
 
@@ -43,7 +43,7 @@ While `wrangler.toml` is open, set `ADMINS` to the name you'll use in step 5, in
 npx wrangler deploy
 ```
 
-It prints your Worker's address, something like `https://now-and-then-sync.your-name.workers.dev`. Open it in a browser and you should see "Now and Then sync is running."
+It prints your Worker's address, something like `https://now-and-then-sync.your-name.workers.dev`. Open it in a browser and you should see "Now or Later sync is running."
 
 ## 5. Make your access token
 
@@ -63,7 +63,7 @@ Paste the token when it asks. Each `TOKEN_<NAME>` secret is one board. Every tok
 
 ## 6. Connect the app
 
-Open [Now and Then](https://tweetingbirds.com/now-and-then/), tap **Settings**, and under **Sync with Cloudflare** paste your Worker's address and your token. Tap **Save and sync**.
+Open [Now or Later](https://tweetingbirds.com/now-and-then/), tap **Settings**, and under **Sync with Cloudflare** paste your Worker's address and your token. Tap **Save and sync**.
 
 To add your other devices, tap **Copy link for another device** in Settings and open that link on each one.
 

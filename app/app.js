@@ -1,4 +1,4 @@
-// Now and Then: a notebook-style todo board.
+// Now or Later: a notebook-style todo board.
 // Lists live on this device (localStorage) and, when configured, sync through a
 // small Cloudflare Worker that merges changes todo by todo (see /worker).
 (() => {
@@ -6,7 +6,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.10.0";
+  const APP_VERSION = "1.11.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -1177,7 +1177,7 @@
   deviceBtn.closest(".row").after(deviceMsg);
   let deviceTimer;
   deviceBtn.addEventListener("click", async () => {
-    const how = await shareLink(appLink({ connect: local.syncToken, sync: workerBase() }), "Now and Then");
+    const how = await shareLink(appLink({ connect: local.syncToken, sync: workerBase() }), "Now or Later");
     if (!how) return;
     const next = "Open it on your other device and tap Connect. That device then syncs with " + boardLabel(local.board) + ".";
     deviceMsg.className = "msg device-msg ok";
@@ -1222,7 +1222,7 @@
     inviteMsg("Creating…");
     try {
       const inv = await adminFetch("/invites", { method: "POST", body: JSON.stringify({ label }) });
-      const how = await shareLink(appLink({ join: inv.code, sync: workerBase() }), "Join me on Now and Then");
+      const how = await shareLink(appLink({ join: inv.code, sync: workerBase() }), "Join me on Now or Later");
       document.getElementById("inviteLabel").value = "";
       await loadInvites();
       if (how === "copied") inviteMsg(`Invite link copied. It works once, until ${shortDate(inv.expires)}.`);
@@ -1277,13 +1277,13 @@
     if (share) { showShareLink(host); return; }
     const had = syncConfigured() && local.synced;
     const what = join
-      ? "You've been invited to sync Now and Then. Joining makes a board of your own, so your lists are saved and show up on your other devices."
+      ? "You've been invited to sync Now or Later. Joining makes a board of your own, so your lists are saved and show up on your other devices."
       : "This link connects this device to an existing board, so it shows the same lists as your other devices.";
     let keep = "";
     if (join) keep = " The lists on this device go onto your new board." + (had ? ` This device stops syncing with ${boardLabel(local.board)}.` : "");
     else if (had) keep = ` This device stops syncing with ${boardLabel(local.board)} and shows that board instead.`;
     else if (!local.pristine) keep = " Lists on this device are added to that board.";
-    document.getElementById("joinTitle").textContent = join ? "Join Now and Then sync" : "Connect this device";
+    document.getElementById("joinTitle").textContent = join ? "Join Now or Later sync" : "Connect this device";
     document.getElementById("joinWhat").textContent = what + keep;
     document.getElementById("joinNameRow").hidden = !join;
     document.getElementById("joinName").value = "";
@@ -1564,7 +1564,7 @@
   }
 
   function backupJson(b = board, owner = local.board) {
-    return JSON.stringify({ app: "Now and Then", exportedAt: new Date().toISOString(), owner: owner || null,
+    return JSON.stringify({ app: "Now or Later", exportedAt: new Date().toISOString(), owner: owner || null,
       version: 1, settings: b.settings, lists: b.lists, todos: b.todos }, null, 2);
   }
 
@@ -1582,15 +1582,15 @@
   }
 
   document.getElementById("exportJson").addEventListener("click", async () => {
-    if (await saveFile(`now-and-then-${stampName()}.json`, backupJson(), "application/json")) backupMsg("Backup saved.");
+    if (await saveFile(`now-or-later-${stampName()}.json`, backupJson(), "application/json")) backupMsg("Backup saved.");
   });
   document.getElementById("exportCsv").addEventListener("click", async () => {
-    if (await saveFile(`now-and-then-${stampName()}.csv`, boardCsv(), "text/csv")) backupMsg("CSV saved.");
+    if (await saveFile(`now-or-later-${stampName()}.csv`, boardCsv(), "text/csv")) backupMsg("CSV saved.");
   });
 
   // Checks a parsed file looks like a board and keeps only well-formed lists and todos.
   function readBackup(data) {
-    if (!data || !Array.isArray(data.lists) || !Array.isArray(data.todos)) throw new Error("This file isn't a Now and Then backup.");
+    if (!data || !Array.isArray(data.lists) || !Array.isArray(data.todos)) throw new Error("This file isn't a Now or Later backup.");
     const ok = (x) => x && typeof x === "object" && typeof x.id === "string";
     const lists = data.lists.filter(l => ok(l) && typeof l.name === "string");
     const todos = data.todos.filter(t => ok(t) && typeof t.text === "string");
@@ -1726,7 +1726,7 @@
     backupMsg("Loading…");
     try {
       const got = await getSnapshot(); if (!got) return backupMsg("");
-      const name = `now-and-then-${(got.s.at || got.s.id).slice(0, 16).replace(/[T:]/g, "-")}.json`;
+      const name = `now-or-later-${(got.s.at || got.s.id).slice(0, 16).replace(/[T:]/g, "-")}.json`;
       if (await saveFile(name, backupJson(got.data, local.board), "application/json")) backupMsg("Copy saved."); else backupMsg("");
     } catch (e) { backupMsg("Couldn't download that copy: " + e.message, true); }
   });
