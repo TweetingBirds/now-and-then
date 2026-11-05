@@ -44,7 +44,8 @@ header.top {
   padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
 .brand { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; min-width: 0; }
-.brand h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; letter-spacing: -.01em; margin: 0; }
+.brand h1 { font-family: var(--font-display); font-weight: 800; font-size: 1.6rem; letter-spacing: -.025em; margin: 0; white-space: nowrap; }
+.brand h1 .hand { font-family: var(--font-hand); font-weight: 400; font-size: .82em; letter-spacing: 0; margin: 0 .06em; color: var(--accent); }
 .brand .date { font-family: var(--font-hand); font-size: 1.15rem; color: var(--muted); }
 .tools { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; align-items: center; }
 .btn {
