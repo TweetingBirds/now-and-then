@@ -3,6 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- Only this site's own scripts (and the theme line below, by its hash) run, and images and
+       fonts load only from here and Google Fonts. Sync can talk to any https address. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-KDLNOaM82cb5CLFroEg340OseYTqlfehKiLytdTwKYo='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https:; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta name="referrer" content="same-origin">
   <title>What's New · Now or Later</title>
   <meta name="description" content="Every version of Now or Later and what changed.">
   <meta name="theme-color" content="#eef0f3" media="(prefers-color-scheme: light)">
@@ -37,8 +41,22 @@
     <h1>What's New</h1>
     <p class="lede">Every version of Now or Later, newest first. Settings shows which version this device is running.</p>
 
+    <article class="release" id="v1.17.0">
+      <h2>1.17 <time datetime="2026-11-05">November 5, 2026</time> <span class="tag">Latest</span></h2>
+      <ul>
+        <li><strong>Archive a finished list.</strong> Temporary lists are gone, and every list you added yourself works the same way now. When everything on one is checked, tap <strong>Archive list</strong> on the note that pops up, or in the list's ••• menu. Nothing gets archived unless you ask. Archived lists wait at the top of Done, and <strong>Use again</strong> brings one back unchecked.</li>
+        <li>Archiving works on shared lists too, and archives the list for everyone on it.</li>
+        <li><strong>See who's on a shared list.</strong> <strong>People and links</strong> in a shared list's ••• menu shows who's on it and any invite links nobody has used yet. Whoever shared the list can take someone off it or take a link back.</li>
+        <li><strong>Device links are safer.</strong> A link that connects another of your devices now works once, within a day. Settings &gt; Sync &gt; Advanced lists your devices, so you can sign one out.</li>
+        <li><strong>Bigger targets, steadier lists.</strong> Checkboxes and buttons are easier to tap, typing no longer zooms the page on iPhone, and a long list scrolls to the todo you just added.</li>
+        <li><strong>Shortcuts with Option.</strong> If single-key shortcuts get in the way, open the shortcuts sheet (press ?) and turn on <strong>Hold Option</strong>, so N becomes Option-N.</li>
+        <li>The sync badge only shows up now when something needs your attention, like being offline.</li>
+        <li>Behind the scenes: a device that's been offline for months can't bring back todos deleted long ago, and a todo added from a Shortcut can't get lost if it arrives while another device is syncing.</li>
+      </ul>
+    </article>
+
     <article class="release" id="v1.16.0">
-      <h2>1.16 <time datetime="2026-11-05">November 5, 2026</time> <span class="tag">Latest</span></h2>
+      <h2>1.16 <time datetime="2026-11-05">November 5, 2026</time></h2>
       <ul>
         <li><strong>Temporary lists.</strong> For a list with an end, like packing for a trip: tap ••• on a list and choose <strong>Make temporary</strong>. Once everything on it is checked, the whole list moves to Done, at the same time finished todos do.</li>
         <li>Finished lists wait at the top of Done. <strong>Use again</strong> brings one back with every todo unchecked, ready for the next trip. Lists in Done don't count toward the 10.</li>

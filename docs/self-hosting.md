@@ -63,23 +63,23 @@ Paste the token when it asks. Each `TOKEN_<NAME>` secret is one board. Every tok
 
 ## 6. Connect the app
 
-Open [Now or Later](https://now-or-later.tweetingbirds.com/), tap **Settings**, and under **Sync with Cloudflare** paste your Worker's address and your token. Tap **Save and sync**.
+Open [Now or Later](https://now-or-later.tweetingbirds.com/), tap **Settings**, then **Sync**, and paste your Worker's address and your token. Tap **Save and sync**.
 
-To add your other devices, tap **Copy link for another device** in Settings and open that link on each one.
+To add your other devices, tap **Copy link for another device** in Settings → Sync and open that link on each one. Each link works once, within a day, and gives that device its own token. **Advanced** lists those devices so you can sign out one you've lost. Removing a `TOKEN_<NAME>` secret signs out every device added from it, too.
 
 ## Inviting family
 
-If your name is in `ADMINS`, Settings shows **Invite people**. Each invite link gives one person their own board on your Worker, with a token made for them. They open it, tap **Join**, and they're syncing. Invites work once and expire after 14 days. Settings lists open invites, so you can revoke one.
+If your name is in `ADMINS`, Settings → Sync → **Advanced** shows **Invite people**. Each invite link gives one person their own board on your Worker, with a token made for them. They open it, tap **Join**, and they're syncing. Invites work once and expire after 14 days. Settings lists open invites, so you can revoke one.
 
 People who joined by invite can delete their own board from Settings at any time. Boards you made with `TOKEN_<NAME>` secrets are deleted by hand (below).
 
 ## Backups
 
-Every night at 09:00 UTC the Worker copies each board, and keeps each copy for 30 days. Settings can restore or download those copies. To change the time, edit `crons` in `wrangler.toml`.
+Every night at 09:00 UTC the Worker copies each board that changed since its last copy (and any board whose last copy is a week old), and keeps each copy for 30 days. Settings can restore or download those copies. To change the time, edit `crons` in `wrangler.toml`.
 
 ## Costs
 
-Cloudflare's free plan covers a household easily. The tightest limit is 1,000 KV writes a day: each sync after an edit is one write, and each board's nightly backup is one more. Reads (the 20-second refresh while the app is open) have a 100,000-a-day limit. `MAX_BOARDS` in `wrangler.toml` (50 by default) caps how many people can join by invite. If you go over a free limit, Cloudflare refuses requests until the next day; it never charges you on the free plan.
+Cloudflare's free plan covers a household easily. The tightest limit is 1,000 KV writes a day: each sync after an edit is one write, and a board's nightly backup is two more on nights it changed. Reads (the 20-second refresh while the app is open) have a 100,000-a-day limit. `MAX_BOARDS` in `wrangler.toml` (12 by default) caps how many people can join by invite. If you go over a free limit, Cloudflare refuses requests until the next day; it never charges you on the free plan.
 
 ## Updating
 

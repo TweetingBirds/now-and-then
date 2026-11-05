@@ -19,5 +19,5 @@ crons = ["0 9 * * *"]
 # MAX_SHARED: the most shared lists this Worker will hold (see "Shared lists" in the README).
 [vars]
 ADMINS = "nate"
-MAX_BOARDS = "50"
+MAX_BOARDS = "12"
 MAX_SHARED = "100"

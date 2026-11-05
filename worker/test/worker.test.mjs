@@ -125,7 +125,7 @@ test("GET lookups are cached, writes are not", async () => {
   await call(e, "GET", "/data", { token });
   const before = e.NOW_AND_THEN.ops.read;
   await call(e, "GET", "/data", { token });
-  assert.equal(e.NOW_AND_THEN.ops.read - before, 1, "one read (the board) per cached GET");
+  assert.equal(e.NOW_AND_THEN.ops.read - before, 2, "two reads (the board and its quick add inbox) per cached GET");
 });
 
 test("snapshotAll covers invited boards", async () => {
@@ -341,4 +341,159 @@ test("quick add into a shared list reaches the other board", async () => {
   assert.equal((await r.json()).list, "Groceries");
   const hers = await (await call(e, "GET", "/data", { token: TIF })).json();
   assert.ok(hers.todos.some(t => t.text === "apples" && t.listId === "g"));
+});
+
+// ---------- audit fixes (1.17) ----------
+import { putBoard } from "../worker.js";
+
+test("a quick add survives a device saving an older copy of the board at the same moment", async () => {
+  const e = env();
+  const lists = [{ id: "n", name: "Now", role: "now", order: 1, updatedAt: 1 }];
+  await put(e, NATE, { lists, todos: [] });
+  const stale = await e.NOW_AND_THEN.get("board:nate", "json"); // what the device's save read
+  await call(e, "POST", "/add", { token: NATE, body: { text: "from Siri" } });
+  // The device's save lands after the quick add, starting from the stale copy.
+  const merged = await putBoard(e, { board: "nate" }, stale, { lists, todos: [{ id: "d1", listId: "n", text: "typed", updatedAt: Date.now() }] });
+  assert.ok(merged.todos.some(t => t.text === "from Siri"), "returned to the device");
+  const b = await get(e, NATE);
+  assert.ok(b.todos.some(t => t.text === "from Siri") && b.todos.some(t => t.text === "typed"));
+  // Deleting it later still wins over the inbox copy.
+  const added = b.todos.find(t => t.text === "from Siri");
+  await put(e, NATE, { lists, todos: [{ ...added, deleted: true, updatedAt: Date.now() + 5 }] });
+  assert.ok((await get(e, NATE)).todos.find(t => t.id === added.id).deleted);
+});
+
+test("quick add skips archived lists", async () => {
+  const e = env();
+  await put(e, NATE, { lists: [
+    { id: "n", name: "Now", role: "now", order: 1, updatedAt: 1 },
+    { id: "p", name: "Packing", order: 2, archived: true, archivedDay: "2026-11-01", updatedAt: 1 },
+  ], todos: [] });
+  const r = await call(e, "POST", "/add", { token: NATE, body: { text: "socks", to: "packing" } });
+  assert.equal((await r.json()).list, "Now");
+});
+
+test("list colors can only be #rrggbb", async () => {
+  const { e, sid } = await setUp();
+  const nb = await get(e, NATE);
+  Object.assign(nb.lists.find(l => l.id === "groc"), { color: "#fff;background-image:url(https://x.example/p)", updatedAt: Date.now() + 1000 });
+  nb.lists.push({ id: "mine", name: "Mine", color: "red", order: 3, updatedAt: Date.now() + 1000 });
+  await put(e, NATE, nb);
+  const t = await get(e, TIFF);
+  assert.equal(t.lists.find(l => l.id === "groc").color, "#a3a9b5");
+  assert.equal(JSON.parse(e.NOW_AND_THEN.m.get("shared:" + sid).v).list.color, "#a3a9b5");
+  assert.equal((await get(e, NATE)).lists.find(l => l.id === "mine").color, "#a3a9b5");
+});
+
+test("someone on a shared list can't reach a private todo by its id", async () => {
+  const { e, sid } = await setUp();
+  // Nate's private todo n1: Tiffany writes a newer deletion, and a live copy, under that id.
+  const doc = JSON.parse(e.NOW_AND_THEN.m.get("shared:" + sid).v);
+  doc.todos.push({ id: "n1", listId: "groc", deleted: true, updatedAt: Date.now() + 1000 });
+  await e.NOW_AND_THEN.put("shared:" + sid, JSON.stringify(doc));
+  const n = await get(e, NATE);
+  const n1 = n.todos.find(x => x.id === "n1");
+  assert.ok(n1 && !n1.deleted && n1.listId === "n-now");
+});
+
+test("device links work once, give the device its own token, and can be taken back", async () => {
+  const e = env();
+  await put(e, NATE, board("milk"));
+  let r = await call(e, "POST", "/devices", { token: NATE });
+  const { code, expires } = await r.json();
+  assert.match(code, /^[A-Za-z0-9_-]{22}$/);
+  assert.ok(Date.parse(expires) - Date.now() <= 24 * 3600e3 + 1000);
+  r = await call(e, "POST", "/devices/connect", { body: { code, label: "iPad" } });
+  assert.equal(r.status, 200);
+  const { token } = await r.json();
+  assert.match(token, /^nd_/);
+  assert.ok(![...e.NOW_AND_THEN.m.values()].some(x => String(x.v).includes(token)), "token itself is never stored");
+  assert.equal((await call(e, "POST", "/devices/connect", { body: { code } })).status, 404, "single use");
+  r = await call(e, "GET", "/data", { token });
+  assert.equal(r.headers.get("X-Board"), "nate");
+  assert.equal(r.headers.get("X-Board-Admin"), "1");
+  assert.equal((await r.json()).todos[0].text, "milk");
+  const list = (await (await call(e, "GET", "/devices", { token: NATE })).json()).devices;
+  assert.equal(list.length, 1); assert.equal(list[0].label, "iPad");
+  assert.equal((await call(e, "DELETE", "/devices/" + list[0].id, { token: TIFF })).status, 404, "only from the same board");
+  assert.equal((await call(e, "DELETE", "/devices/" + list[0].id, { token: NATE })).status, 200);
+  assert.equal((await call(e, "GET", "/data", { token })).status, 410);
+  assert.equal((await call(e, "GET", "/data", { token: "nd_" + "A".repeat(43) })).status, 401);
+});
+
+test("deleting an invited board from a device link removes the board and every token", async () => {
+  const e = env();
+  const inv = await (await call(e, "POST", "/invites", { token: NATE, body: {} })).json();
+  const j = await (await call(e, "POST", "/join", { body: { code: inv.code } })).json();
+  await put(e, j.token, board("a"));
+  const { code } = await (await call(e, "POST", "/devices", { token: j.token })).json();
+  const { token } = await (await call(e, "POST", "/devices/connect", { body: { code } })).json();
+  assert.equal((await call(e, "DELETE", "/data?confirm=delete", { token })).status, 200);
+  assert.equal((await call(e, "GET", "/data", { token: j.token })).status, 410);
+  assert.equal((await call(e, "GET", "/data", { token })).status, 410);
+  assert.ok(![...e.NOW_AND_THEN.m.keys()].some(k => k.startsWith("tok:") || k.startsWith("dtok:") || k === "board:" + j.board));
+});
+
+test("shared list links: listed, withdrawn, and dead once their maker leaves", async () => {
+  const { e, sid } = await setUp();
+  const a = await (await call(e, "POST", `/shared/${sid}/invites`, { token: TIFF })).json();
+  const b = await (await call(e, "POST", `/shared/${sid}/invites`, { token: NATE })).json();
+  let info = await (await call(e, "GET", `/shared/${sid}`, { token: NATE })).json();
+  assert.equal(info.owner, true);
+  assert.deepEqual(info.members.map(m => m.name), ["Nate", "Tiffany"]);
+  assert.equal(info.invites.length, 2);
+  assert.equal((await call(e, "DELETE", `/shared/${sid}/invites/${b.code}`, { token: NATE })).status, 200);
+  info = await (await call(e, "GET", `/shared/${sid}`, { token: TIFF })).json();
+  assert.equal(info.owner, false);
+  assert.deepEqual(info.invites.map(i => i.code), [a.code]);
+  // Tiffany leaves: her link stops working.
+  await call(e, "DELETE", `/shared/${sid}`, { token: TIFF });
+  const inv = await (await call(e, "POST", "/invites", { token: NATE, body: {} })).json();
+  const linda = await (await call(e, "POST", "/join", { body: { code: inv.code } })).json();
+  await put(e, linda.token, board("x"));
+  assert.equal((await call(e, "POST", "/shared/join", { token: linda.token, body: { code: a.code } })).status, 404);
+});
+
+test("the owner can take someone off a shared list, and it doesn't come back as a private copy", async () => {
+  const { e, sid } = await setUp();
+  const herPhone = await get(e, TIFF); // still has the shared list
+  assert.equal((await call(e, "DELETE", `/shared/${sid}/members/nate`, { token: TIFF })).status, 403, "only the owner");
+  assert.equal((await call(e, "DELETE", `/shared/${sid}/members/tiffany`, { token: NATE })).status, 200);
+  assert.deepEqual((await get(e, NATE)).lists.find(l => l.id === "groc").members, ["Nate"]);
+  // Her phone saves what it has: the list and its todos come back as tombstones.
+  herPhone.todos.find(t => t.id === "g1").updatedAt = Date.now();
+  const t = await put(e, TIFF, herPhone);
+  assert.ok(t.lists.find(l => l.id === "groc").deleted);
+  assert.ok(t.todos.find(x => x.id === "g1").deleted);
+  assert.ok(t.todos.some(x => x.id === "t1" && !x.deleted), "her own todos stay");
+  assert.ok((await get(e, NATE)).todos.some(x => x.id === "g1" && !x.deleted), "Nate keeps the list's todos");
+});
+
+test("a device offline for months can't bring back deleted todos", async () => {
+  const e = env();
+  const old = Date.now() - 90 * 864e5;
+  const lists = [{ id: "n", name: "Now", role: "now", order: 1, updatedAt: old }];
+  await put(e, NATE, { lists, todos: [] });
+  const zombie = { id: "z", listId: "n", text: "deleted in the spring", updatedAt: old };
+  const synced = String(Date.now() - 80 * 864e5);
+  let r = await call(e, "PUT", "/data", { token: NATE, body: { lists, todos: [zombie, { id: "new", listId: "n", text: "new", updatedAt: Date.now() }] }, headers: { "X-Synced-At": synced } });
+  let b = await r.json();
+  assert.ok(!b.todos.some(t => t.id === "z"));
+  assert.ok(b.todos.some(t => t.id === "new"));
+  // A device that has never synced here keeps everything it brings, however old.
+  r = await call(e, "PUT", "/data", { token: NATE, body: { lists, todos: [zombie] } });
+  assert.ok((await r.json()).todos.some(t => t.id === "z"));
+});
+
+test("the nightly copy skips boards that haven't changed", async () => {
+  const e = env();
+  await put(e, NATE, board("a"));
+  const run = async () => { let w; await worker.scheduled({}, e, { waitUntil: p => { w = p; } }); await w; };
+  const snaps = () => [...e.NOW_AND_THEN.m.keys()].filter(k => k.startsWith("snap:nate:")).length;
+  await run(); assert.equal(snaps(), 1);
+  await new Promise(r => setTimeout(r, 5));
+  await run(); assert.equal(snaps(), 1, "unchanged: skipped");
+  await put(e, NATE, { lists: [], todos: [{ id: "t2", listId: "l1", text: "b", updatedAt: Date.now() }] });
+  await new Promise(r => setTimeout(r, 5));
+  await run(); assert.equal(snaps(), 2, "changed: copied");
 });
