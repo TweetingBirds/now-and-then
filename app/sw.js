@@ -9,7 +9,7 @@ const VERSION = "nat-__BUILD_NUMBER__-__BUILD_SHA__";
 const FONTS = "nat-fonts-v1";
 // On a weak signal, wait this long for the network before using the saved copy.
 const NETWORK_WAIT_MS = 3000;
-const SHELL = ["./", "index.html", "styles.css", "styles.css?v=__BUILD_NUMBER__", "app.js?v=__BUILD_NUMBER__", "manifest.webmanifest", "pages.css", "pages.js", "whats-new.html", "support.html", "privacy.html", "terms.html", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/icon-maskable-512.png"];
+const SHELL = ["./", "index.html", "styles.css", "styles.css?v=__BUILD_NUMBER__", "app.js?v=__BUILD_NUMBER__", "core.js?v=__BUILD_NUMBER__", "manifest.webmanifest", "pages.css", "pages.js", "whats-new.html", "support.html", "privacy.html", "terms.html", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/icon-maskable-512.png"];
 
 self.addEventListener("install", (e) => {
   // cache: "reload" skips the HTTP cache, which can still hold the previous build

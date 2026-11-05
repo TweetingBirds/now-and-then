@@ -257,7 +257,7 @@ header.top {
 .pop .danger { color: var(--delete); }
 .swatches { display: grid; grid-template-columns: repeat(6, 26px); gap: 6px; padding: 6px 8px; }
 .swatches button { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line); }
-.swatches button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--ink); }
+.swatches button[aria-checked="true"] { box-shadow: 0 0 0 2px var(--ink); }
 .custom-color { display: flex; align-items: center; gap: 8px; padding: 4px 8px 6px; font-size: .85rem; color: var(--muted); }
 .custom-color input { width: 36px; height: 26px; border: none; background: none; padding: 0; }
 
@@ -635,3 +635,6 @@ body:has(dialog.welcome[open]) { overflow: hidden; }
 .keylist kbd.opt[hidden] { display: none; }
 /* Inputs have a built-in minimum width that pushed lists past 300px on a wide screen. */
 .col input, .col .col-title { min-width: 0; }
+
+/* Read by screen readers, not shown. */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

@@ -58,7 +58,7 @@
 // POST /snapshots takes one now. A token only ever sees its own board's snapshots.
 //
 // Older Done: Done todos finished more than OLD_DAYS ago move from the board to
-// "old:<board>" on each save, and GET /old returns them (see isOld below).
+// "old:<board>" on each save, and GET /old returns them (see isOld in app/core.js).
 //
 // Everything here stays inside Workers KV's free tier for a family-sized group: see
 // "Costs and limits" in the README.
@@ -70,7 +70,8 @@
 //                          MAX_BOARDS  how many invited boards may exist (default 12)
 //                          MAX_SHARED  how many shared lists may exist (default 100)
 
-const TOMBSTONE_DAYS = 60;
+import { TOMBSTONE_DAYS, stamp, pickNewest, pruneTombstones, mergeBoards as mergeCore, isOld, oldCutoff, quickTarget, quickLines } from "../app/core.js";
+
 const SNAPSHOT_DAYS = 30;
 const INVITE_DAYS = 14;    // default life of an invite link
 const GONE_DAYS = 30;      // how long a deleted token answers "board deleted" instead of 401
@@ -81,13 +82,10 @@ const SHARED_ID = /^s_[a-f0-9]{16}$/;
 const MAX_LISTS = 10;      // same as the app: shared lists count toward it
 const MAX_MEMBERS = 10;    // boards per shared list
 const UNSHAREABLE = new Set(["now", "tomorrow"]); // the morning rollover moves todos between these
-const QUICK_MAX = 50;      // todos per quick add
-const QUICK_LEN = 500;     // characters per quick-added todo
 const INBOX_DAYS = 2;      // how long a quick add waits in the inbox (see inbox below)
 const DEVICE_HOURS = 24;   // life of a device link
 const SNAP_EVERY_DAYS = 7; // an unchanged board still gets a nightly copy this often
 const DEVICE_CODE = /^[A-Za-z0-9_-]{22}$/;
-const OLD_DAYS = 90;       // Done todos finished longer ago than this move to "old:<board>"
 const FUTURE_MS = 864e5;   // an edit stamped further ahead than this is from a wrong clock
 const SNAP_GAP_MS = 5 * 60_000; // one manual snapshot per board this often
 // Limits on what one save can hold, far above real use (a busy year is a few
@@ -288,46 +286,14 @@ async function devicesOf(env, board) {
 
 // ---------- merge ----------
 
-// Keep in sync with mergeBoards() in app/app.js.
+// The rules (newest wins, tombstones, ties) live in app/core.js, shared with the app.
 export function mergeBoards(a, b) {
-  const cutoff = Date.now() - TOMBSTONE_DAYS * 864e5;
-  const mergeById = (x = [], y = []) => {
-    const m = new Map();
-    for (const item of [...x, ...y]) {
-      if (!item || typeof item.id !== "string") continue;
-      const prev = m.get(item.id);
-      if (!prev || (item.updatedAt || 0) >= (prev.updatedAt || 0)) m.set(item.id, item);
-    }
-    return [...m.values()].filter((i) => !(i.deleted && (i.updatedAt || 0) < cutoff));
-  };
-  const sa = (a && a.settings) || {}, sb = (b && b.settings) || {};
-  return {
-    version: 1,
-    settings: (sb.updatedAt || 0) >= (sa.updatedAt || 0) ? sb : sa,
-    lists: mergeById(a && a.lists, b && b.lists),
-    todos: mergeById(a && a.todos, b && b.todos),
-  };
+  return mergeCore(a, b);
 }
 
 // ---------- shared lists ----------
 
-const stamp = (x) => (x && x.updatedAt) || 0;
 const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-const pruneTombstones = (xs) => {
-  const cutoff = Date.now() - TOMBSTONE_DAYS * 864e5;
-  return xs.filter((i) => !(i.deleted && stamp(i) < cutoff));
-};
-// Newest wins. A tie between a live copy and a tombstone is a todo that moved
-// from one shared list to another list at that moment: the live copy wins.
-function pickNewest(groups) {
-  const m = new Map();
-  for (const xs of groups) for (const item of xs || []) {
-    if (!item || typeof item.id !== "string") continue;
-    const prev = m.get(item.id);
-    if (!prev || stamp(item) > stamp(prev) || (stamp(item) === stamp(prev) && prev.deleted && !item.deleted)) m.set(item.id, item);
-  }
-  return [...m.values()];
-}
 const memberNames = (doc) => doc.members.map((x) => x.name || "Someone");
 // Colors end up in the app's CSS, so only "#rrggbb" gets through. Anything else
 // (from an old bug, or from someone on a shared list trying to slip in more CSS)
@@ -402,7 +368,7 @@ export async function putBoard(env, who, stored, incoming, syncedAt = 0) {
   const { docs } = view;
   let shared = view.shared.map((m) => ({ ...m }));
   // Lists whose todos never move to old: archived ones, and shared ones.
-  const cut = oldCutoffDay();
+  const cut = oldCutoff(new Date(), true);
   const keepLists = new Set([...view.board.lists, ...(incoming.lists || [])].filter((l) => l && (l.archived || l.shared)).map((l) => l.id));
   for (const doc of docs.values()) keepLists.add(doc.list.id);
   // An older app still sends its old Done todos. They go straight to old, which
@@ -531,11 +497,7 @@ function clampClock(incoming) {
 // board into "old:<board>", which the app only asks for (GET /old) when someone
 // searches or looks further back. Todos on an archived list stay with the list,
 // so "Use again" still has them, and shared lists keep theirs.
-// Keep the rule in step with isOld() in app/app.js.
-const oldCutoffDay = () => new Date(Date.now() - OLD_DAYS * 864e5).toISOString().slice(0, 10);
-function isOld(t, cut, keepLists) {
-  return !!t && !t.deleted && t.archived === true && typeof t.archivedDay === "string" && t.archivedDay < cut && !keepLists.has(t.listId);
-}
+// The rule itself is isOld() in app/core.js, shared with the app.
 export async function readOld(env, board) {
   const doc = await env.NOW_AND_THEN.get("old:" + board, "json");
   return (doc && Array.isArray(doc.todos)) ? doc.todos : [];
@@ -723,8 +685,8 @@ const boardHeaders = (who) => ({
   ...(who.admin ? { "X-Board-Admin": "1" } : {}),
 });
 
-// POST /add — see "Quick add" at the top. Keep the target rules in step with
-// quickTarget() in app/app.js.
+// POST /add — see "Quick add" at the top. Where it lands is quickTarget() in
+// app/core.js, shared with the app.
 export async function quickAdd(request, env, who) {
   const hdrs = boardHeaders(who);
   const raw = await request.text();
@@ -739,16 +701,14 @@ export async function quickAdd(request, env, who) {
   }
   if (!text) text = url.searchParams.get("text") || "";
   if (!to) to = url.searchParams.get("to") || "";
-  const lines = text.split(/\r?\n/).map((x) => x.trim().replace(/^[-*•]\s+/, "").slice(0, QUICK_LEN)).filter(Boolean).slice(0, QUICK_MAX);
+  const lines = quickLines(text);
   if (!lines.length) return json({ error: "no text" }, 400, hdrs);
 
   const KEY = "board:" + who.board;
   const stored = await env.NOW_AND_THEN.get(KEY, "json");
   const view = await openBoard(env, who.board, stored);
   const live = view.board.lists.filter((l) => !l.deleted && !l.archived).sort((a, b) => (a.order || 0) - (b.order || 0));
-  const want = to.trim().toLowerCase();
-  const list = (want && (live.find((l) => l.role === want) || live.find((l) => (l.name || "").trim().toLowerCase() === want)))
-    || live.find((l) => l.role === "now") || live[0];
+  const list = quickTarget(live, to);
   if (!list) return json({ error: "no lists yet. Open the app once so it can sync." }, 409, hdrs);
 
   let order = Math.max(0, ...view.board.todos.filter((t) => t.listId === list.id && !t.deleted && !t.archived).map((t) => t.order || 0));
