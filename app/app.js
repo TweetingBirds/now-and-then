@@ -9,7 +9,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.23.0";
+  const APP_VERSION = "1.24.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -749,13 +749,18 @@
       el("label", { class: "check-hit" }, el("input", { type: "checkbox", class: "check", checked: t.done, "aria-label": t.text, onchange: e => {
         const checked = e.target.checked;
         const list = listById(t.listId);
+        let finished = false;
         const undo = undoable([t], () => {
           touch(t, { done: checked, doneDay: checked ? todayKey() : null });
+          // Read before Done-right-away moves this todo out of the list.
+          finished = checked && !!list && todosIn(list.id).every(x => x.done);
           // The last todo on one of your own lists: offer to archive it, not on the
           // notebook's pages. Checked todos stay put a moment so the offer can be taken.
           if (checked && board.settings.doneNow && !(list && canArchive(list))) archive(t);
           commit();
         });
+        // Only your own tap on the last box celebrates, never a sync or a reload.
+        if (finished) confetti(e.target);
         if (checked && list && canArchive(list)) {
           toast(`Everything on ${list.name} is done.`, undo, { label: "Archive list", run: () => archiveNow(list) });
         } else if (checked) toast(board.settings.doneNow ? "Nice. Moved to Done." : "Nice. It moves to Done tomorrow morning.", undo);
@@ -1315,7 +1320,7 @@
       summary.textContent = !filtering ? "" : when && !doneView.q.trim() ? `${n} finished ${when}` : `${n} match${n === 1 ? "" : "es"}`;
       summary.hidden = !filtering;
       body.replaceChildren();
-      if (!all.length && !filtering) { const shelf = finishedShelf(); body.append(...(shelf ? [shelf] : []), el("div", { class: "empty" }, oldLoading ? "Looking further back…" : "Finished todos land here each morning."), further()); return; }
+      if (!all.length && !filtering) { const shelf = finishedShelf(); body.append(...(shelf ? [shelf] : []), el("div", { class: "empty" }, oldLoading ? "Looking further back…" : "Finished todos land here each morning."), ...[further()].filter(Boolean)); return; }
       if (!items.length) {
         body.append(el("div", { class: "empty" }, oldLoading ? "Looking further back…" : doneView.q.trim() ? "Nothing in Done matches that." : "Nothing finished in this stretch yet."),
           el("button", { type: "button", class: "btn clear-filter", onclick: () => { doneView.q = ""; doneView.range = "all"; doneView.list = ""; doneView.limit = DONE_PAGE; render(); } }, "Show everything"));
@@ -2011,6 +2016,39 @@
   document.querySelectorAll('input[name="theme"]').forEach(r => r.addEventListener("change", () => {
     local.theme = r.value; write(LOCAL_KEY, local); applyTheme();
   }));
+
+  // ---------- confetti ----------
+  // A small handful of paper bits from the box that finished a list. Plain DOM and
+  // the Web Animations API, nothing to load. Skipped when the device asks for less motion.
+  function confetti(from) {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches || !document.body.animate) return;
+    const r = from.getBoundingClientRect();
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const layer = el("div", { class: "confetti", "aria-hidden": "true" });
+    const colors = [...PALETTE.slice(0, 6), "#d9534f"];
+    let longest = 0;
+    for (let i = 0; i < 36; i++) {
+      const bit = el("i", {});
+      const w = 5 + Math.random() * 5, h = w * (0.4 + Math.random() * 0.5);
+      Object.assign(bit.style, { left: x + "px", top: y + "px", width: w + "px", height: h + "px", background: colors[i % colors.length], borderRadius: Math.random() < 0.3 ? "50%" : "1px" });
+      layer.append(bit);
+      // Up and out in a fan, then drifting down past where it started.
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.9;
+      const v = 90 + Math.random() * 110;
+      const dx = Math.cos(a) * v, dy = Math.sin(a) * v;
+      const spin = (Math.random() < 0.5 ? -1 : 1) * (240 + Math.random() * 480);
+      const ms = 1000 + Math.random() * 500;
+      longest = Math.max(longest, ms);
+      bit.animate([
+        { transform: "translate(-50%, -50%) rotate(0deg)", opacity: 1 },
+        { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) rotate(${spin / 2}deg)`, opacity: 1, offset: 0.35 },
+        { transform: `translate(calc(-50% + ${dx * 1.3}px), calc(-50% + ${dy + 160}px)) rotate(${spin}deg)`, opacity: 0 },
+      ], { duration: ms, easing: "cubic-bezier(.2,.7,.4,1)", fill: "forwards" });
+    }
+    document.body.append(layer);
+    setTimeout(() => layer.remove(), longest + 50);
+    haptic("drop");
+  }
 
   // ---------- haptics (per device) ----------
   // Android and most non-Apple browsers have the Vibration API. Safari on iPhone
