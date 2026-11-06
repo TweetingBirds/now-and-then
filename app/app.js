@@ -9,7 +9,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.24.0";
+  const APP_VERSION = "1.25.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -2018,35 +2018,51 @@
   }));
 
   // ---------- confetti ----------
-  // A small handful of paper bits from the box that finished a list. Plain DOM and
-  // the Web Animations API, nothing to load. Skipped when the device asks for less motion.
+  // A real burst from the box that finished a list, plus a shower from the top of
+  // the screen, so it's hard to miss. Plain DOM and the Web Animations API, nothing
+  // to load. Skipped when the device asks for less motion.
   function confetti(from) {
     if (matchMedia("(prefers-reduced-motion: reduce)").matches || !document.body.animate) return;
     const r = from.getBoundingClientRect();
-    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const W = innerWidth, H = innerHeight;
     const layer = el("div", { class: "confetti", "aria-hidden": "true" });
-    const colors = [...PALETTE.slice(0, 6), "#d9534f"];
+    const colors = [...PALETTE.slice(0, 8), "#d9534f", "#2f5bd3"];
+    const rand = (lo, hi) => lo + Math.random() * (hi - lo);
     let longest = 0;
-    for (let i = 0; i < 36; i++) {
+    // Each bit flies on a simple gravity arc with air drag, flipping like paper as it goes.
+    const fling = (x, y, vx, vy, ms, i) => {
       const bit = el("i", {});
-      const w = 5 + Math.random() * 5, h = w * (0.4 + Math.random() * 0.5);
-      Object.assign(bit.style, { left: x + "px", top: y + "px", width: w + "px", height: h + "px", background: colors[i % colors.length], borderRadius: Math.random() < 0.3 ? "50%" : "1px" });
+      const w = rand(8, 15), h = w * rand(0.45, 0.9);
+      Object.assign(bit.style, { left: x + "px", top: y + "px", width: w + "px", height: h + "px", background: colors[i % colors.length], borderRadius: Math.random() < 0.25 ? "50%" : "2px" });
       layer.append(bit);
-      // Up and out in a fan, then drifting down past where it started.
-      const a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.9;
-      const v = 90 + Math.random() * 110;
-      const dx = Math.cos(a) * v, dy = Math.sin(a) * v;
-      const spin = (Math.random() < 0.5 ? -1 : 1) * (240 + Math.random() * 480);
-      const ms = 1000 + Math.random() * 500;
+      const g = rand(700, 1000), drag = 2.2, spin = rand(-900, 900), flip = rand(540, 1440), sway = rand(10, 30);
+      const fall = (t) => { const d = (1 - Math.exp(-drag * t)) / drag; return vy * d + g * (t - d) / drag; };
+      // Long enough to fall past the bottom of the screen, however tall it is.
+      let end = ms / 1000;
+      while (y + fall(end) < H + 30 && end < 8) end += 0.1;
+      ms = end * 1000;
+      const frames = [];
+      for (let k = 0; k <= 24; k++) {
+        const t = (k / 24) * end;
+        const d = (1 - Math.exp(-drag * t)) / drag;   // distance factor after drag
+        const dx = vx * d + Math.sin(t * 6 + i) * sway * (t > 0.3 ? 1 : t / 0.3);
+        frames.push({ transform: `translate(${dx}px, ${fall(t)}px) rotate(${spin * t}deg) rotateX(${flip * t}deg)` });
+      }
+      bit.animate(frames, { duration: ms, easing: "linear", fill: "forwards" });
       longest = Math.max(longest, ms);
-      bit.animate([
-        { transform: "translate(-50%, -50%) rotate(0deg)", opacity: 1 },
-        { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) rotate(${spin / 2}deg)`, opacity: 1, offset: 0.35 },
-        { transform: `translate(calc(-50% + ${dx * 1.3}px), calc(-50% + ${dy + 160}px)) rotate(${spin}deg)`, opacity: 0 },
-      ], { duration: ms, easing: "cubic-bezier(.2,.7,.4,1)", fill: "forwards" });
+    };
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    for (let i = 0; i < 110; i++) {
+      const a = -Math.PI / 2 + rand(-0.6, 0.6) * Math.PI;
+      const v = rand(600, 1400);
+      fling(x, y, Math.cos(a) * v, Math.sin(a) * v, rand(1500, 2500), i);
+    }
+    // A shower from just above the screen, across its whole width.
+    for (let i = 0; i < 90; i++) {
+      fling(rand(0, W), -20, rand(-120, 120), rand(0, 250), rand(1500, 2500), i + 3);
     }
     document.body.append(layer);
-    setTimeout(() => layer.remove(), longest + 50);
+    setTimeout(() => layer.remove(), longest + 100);
     haptic("drop");
   }
 
