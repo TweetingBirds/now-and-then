@@ -654,3 +654,7 @@ dialog.settings.confirm p { color: var(--ink); font-size: .95rem; }
 
 /* Read by screen readers, not shown. */
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Confetti when a list is finished (app.js confetti()). It floats above everything and never takes a tap. */
+.confetti { position: fixed; inset: 0; pointer-events: none; z-index: 2147483000; overflow: hidden; }
+.confetti i { position: absolute; display: block; will-change: transform, opacity; }
