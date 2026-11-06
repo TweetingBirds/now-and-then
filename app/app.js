@@ -9,7 +9,7 @@
 
   // APP_VERSION is bumped by hand for notable releases. The BUILD_* values are
   // stamped by the GitHub Pages workflow on every deploy (left as-is locally).
-  const APP_VERSION = "1.25.0";
+  const APP_VERSION = "1.26.0";
   const BUILD_NUMBER = "__BUILD_NUMBER__";
   const BUILD_SHA = "__BUILD_SHA__";
   const BUILD_DATE = "__BUILD_DATE__";
@@ -144,6 +144,15 @@
   const todayKey = () => keyOf(dayDate());
   function pretty(key, opts = { weekday: "long", month: "long", day: "numeric" }) {
     const [y, m, d] = key.split("-").map(Number); return new Date(y, m - 1, d, 12).toLocaleDateString(undefined, opts);
+  }
+  // Lists can show a date in their header, like the top of a notebook page. Now and
+  // Tomorrow do unless you turn it off; any other list can be turned on. The dated
+  // lists count up from today, left to right: the first is today, the next tomorrow.
+  const showsDate = (l) => typeof l.showDate === "boolean" ? l.showDate : (l.role === "now" || l.role === "tomorrow");
+  function listDates(ls) {
+    const dates = new Map(), d = dayDate();
+    for (const l of ls) if (showsDate(l)) { dates.set(l.id, keyOf(d)); d.setDate(d.getDate() + 1); }
+    return dates;
   }
 
   function archive(t) {
@@ -655,11 +664,11 @@
     // to the menu's button rather than to the top of the page.
     const fromMenu = openPop && openPop.contains(document.activeElement) && popTrigger ? popTrigger.id : "";
     closePop();
-    document.getElementById("today").textContent = pretty(todayKey());
     const ls = lists();
     unsyncedIds = pendingTodoIds();
+    const dates = listDates(ls);
     boardEl.replaceChildren();
-    ls.forEach(l => boardEl.append(renderList(l)));
+    ls.forEach(l => boardEl.append(renderList(l, dates.get(l.id))));
     const full = ls.length >= MAX_LISTS;
     boardEl.append(el("button", { class: "new-list", id: "addList", disabled: full, onclick: addList },
       full ? "List limit reached" : "+ New list", el("small", {}, `${ls.length} of ${MAX_LISTS}`)));
@@ -704,14 +713,15 @@
   boardEl.addEventListener("scroll", () => { cancelAnimationFrame(tabFrame); tabFrame = requestAnimationFrame(markTab); }, { passive: true });
   window.addEventListener("resize", () => markTab());
 
-  function renderList(list) {
+  function renderList(list, dateKey) {
     const todos = todosIn(list.id);
+    const dateText = dateKey ? pretty(dateKey) : "";
     const open = todos.filter(t => !t.done).length;
     const col = el("section", { class: "col" + (list.shared ? " shared" : ""), "data-list": list.id, style: `--c:${safeColor(list.color)}`, "aria-labelledby": "h-" + list.id });
     const head = el("div", { class: "col-head" });
     // The name is an input you can edit, so screen readers get a plain heading too.
     head.append(...[
-      el("h2", { class: "sr-only", id: "h-" + list.id }, `${list.name}, ${open} to do`),
+      el("h2", { class: "sr-only", id: "h-" + list.id }, `${list.name}${dateText ? ", " + dateText : ""}, ${open} to do`),
       el("button", { class: "swatch-btn", id: "color-" + list.id, title: "Change color", "aria-label": `Change ${list.name} color`, "data-pop-trigger": true, onclick: e => colorPop(e, list, head) }),
       el("input", {
         class: "col-title", value: list.name, "aria-label": "List name", maxlength: 30, id: "name-" + list.id,
@@ -735,7 +745,9 @@
       // A long list keeps what was just added in view.
       rowOf(id)?.scrollIntoView({ block: "nearest" });
     } }, input, el("button", { class: "btn", type: "submit" }, "Add"));
-    col.append(head, body, form);
+    col.append(head);
+    if (dateText) col.append(el("div", { class: "col-date", "aria-hidden": "true" }, dateText));
+    col.append(body, form);
     return col;
   }
 
@@ -858,6 +870,8 @@
       el("button", { class: "item", onclick: () => { closePop(); const i = document.getElementById("name-" + list.id); i.focus(); i.select(); } }, "Rename"),
       el("button", { class: "item", disabled: idx === 0, onclick: () => swapLists(list, ls[idx - 1]) }, "Move list left"),
       el("button", { class: "item", disabled: idx === ls.length - 1, onclick: () => swapLists(list, ls[idx + 1]) }, "Move list right"),
+      el("button", { class: "item check-item", role: "menuitemcheckbox", "aria-checked": String(showsDate(list)),
+        onclick: () => { closePop(); touch(list, { showDate: !showsDate(list) }); commit(); } }, "Show date"),
       !list.role ? el("button", { class: "item", onclick: () => askArchive(list) }, "Archive list…") : null,
       canShare ? el("button", { class: "item", onclick: () => { closePop(); shareList(list); } }, "Share list…") : null,
       list.shared ? el("button", { class: "item", onclick: () => { closePop(); manageShared(list); } }, "People and links…") : null,
