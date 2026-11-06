@@ -50,7 +50,6 @@ header.top {
 .brand { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; min-width: 0; }
 .brand h1 { font-family: var(--font-display); font-weight: 800; font-size: 1.6rem; letter-spacing: -.025em; margin: 0; white-space: nowrap; }
 .brand h1 .hand { font-family: var(--font-hand); font-weight: 400; font-size: .82em; letter-spacing: 0; margin: 0 .06em; color: var(--accent); }
-.brand .date { font-family: var(--font-hand); font-size: 1.15rem; color: var(--muted); }
 .tools { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; align-items: center; }
 .btn {
   border: 1px solid var(--line); background: var(--surface); border-radius: 8px;
@@ -100,6 +99,8 @@ header.top {
 }
 .col-title:hover { border-color: color-mix(in oklab, var(--c) 50%, var(--line)); }
 .col-title:focus { background: var(--surface); border-color: color-mix(in oklab, var(--c) 65%, var(--ink)); outline: none; }
+/* A dated list: the day written under the name, like the top of a notebook page. */
+.col-date { font-family: var(--font-hand); font-size: 1.05rem; line-height: 1.2; color: var(--muted); padding: 0 12px 6px 46px; margin-top: -6px; }
 .count { font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 /* Shared lists: a small people mark by the count; tapping it opens the list menu. */
 .shared-mark {
@@ -256,6 +257,9 @@ header.top {
 /* Move list left on the first list, say: grayed out, and nothing happens on hover or tap. */
 .pop button.item:disabled { opacity: .4; cursor: default; }
 .pop button.item:disabled:hover { background: none; }
+/* Show date: a checkmark at the right when it's on. */
+.pop button.check-item::after { content: ""; margin-left: auto; padding-left: 12px; font-weight: 700; }
+.pop button.check-item[aria-checked="true"]::after { content: "✓"; }
 .pop .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .pop .danger { color: var(--delete); }
 .swatches { display: grid; grid-template-columns: repeat(6, 26px); gap: 6px; padding: 6px 8px; }
@@ -320,9 +324,9 @@ body.is-dragging .board { scroll-snap-type: none; }
   .list-tabs .tab[aria-current] { color: var(--ink); border-color: color-mix(in oklab, var(--c) 60%, var(--line)); background: color-mix(in oklab, var(--c) 20%, var(--surface)); font-weight: 700; }
 }
 @media (max-width: 520px) {
-  .tools { margin-left: 0; }
   .col { flex-basis: calc(100vw - 48px); }
-  /* Phones stack the title, date and buttons; keep those gaps tight. */
+  /* The date lives in the lists now, so Settings stays on the title's row at the
+     right. If the sync badge makes it wrap, keep the gap tight. */
   header.top { row-gap: 8px; }
   .brand { row-gap: 0; }
   .board { padding-top: 2px; }
